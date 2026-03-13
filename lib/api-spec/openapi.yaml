@@ -1,0 +1,1293 @@
+openapi: 3.1.0
+info:
+  title: Api
+  version: 1.0.0
+  description: BallotWave - Digital Voting Platform API
+servers:
+  - url: /api
+    description: Base API path
+tags:
+  - name: health
+    description: Health operations
+  - name: auth
+    description: Authentication operations
+  - name: schools
+    description: School/tenant management
+  - name: elections
+    description: Election management
+  - name: candidates
+    description: Candidate management
+  - name: votes
+    description: Voting operations
+  - name: payments
+    description: Payment operations
+  - name: analytics
+    description: Analytics and reports
+  - name: users
+    description: User management
+
+paths:
+  /healthz:
+    get:
+      operationId: healthCheck
+      tags: [health]
+      summary: Health check
+      responses:
+        "200":
+          description: Healthy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthStatus"
+
+  # Auth
+  /auth/register:
+    post:
+      operationId: registerUser
+      tags: [auth]
+      summary: Register a new user
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RegisterRequest"
+      responses:
+        "201":
+          description: User registered
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthResponse"
+        "400":
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /auth/login:
+    post:
+      operationId: loginUser
+      tags: [auth]
+      summary: Login a user
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoginRequest"
+      responses:
+        "200":
+          description: Logged in
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthResponse"
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /auth/logout:
+    post:
+      operationId: logoutUser
+      tags: [auth]
+      summary: Logout user
+      responses:
+        "200":
+          description: Logged out
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponse"
+
+  /auth/me:
+    get:
+      operationId: getCurrentUser
+      tags: [auth]
+      summary: Get current user
+      responses:
+        "200":
+          description: Current user
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        "401":
+          description: Not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  # Schools
+  /schools:
+    get:
+      operationId: listSchools
+      tags: [schools]
+      summary: List all schools
+      responses:
+        "200":
+          description: List of schools
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/School"
+    post:
+      operationId: createSchool
+      tags: [schools]
+      summary: Create a new school
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateSchoolRequest"
+      responses:
+        "201":
+          description: School created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/School"
+
+  /schools/{schoolId}:
+    get:
+      operationId: getSchool
+      tags: [schools]
+      summary: Get school by ID
+      parameters:
+        - name: schoolId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: School details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/School"
+    patch:
+      operationId: updateSchool
+      tags: [schools]
+      summary: Update school
+      parameters:
+        - name: schoolId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateSchoolRequest"
+      responses:
+        "200":
+          description: School updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/School"
+
+  # Elections
+  /elections:
+    get:
+      operationId: listElections
+      tags: [elections]
+      summary: List elections
+      parameters:
+        - name: schoolId
+          in: query
+          schema:
+            type: string
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [draft, active, closed, cancelled]
+      responses:
+        "200":
+          description: List of elections
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Election"
+    post:
+      operationId: createElection
+      tags: [elections]
+      summary: Create a new election
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateElectionRequest"
+      responses:
+        "201":
+          description: Election created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Election"
+
+  /elections/{electionId}:
+    get:
+      operationId: getElection
+      tags: [elections]
+      summary: Get election by ID
+      parameters:
+        - name: electionId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Election details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ElectionDetail"
+    patch:
+      operationId: updateElection
+      tags: [elections]
+      summary: Update election
+      parameters:
+        - name: electionId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateElectionRequest"
+      responses:
+        "200":
+          description: Election updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Election"
+
+  /elections/{electionId}/start:
+    post:
+      operationId: startElection
+      tags: [elections]
+      summary: Start an election
+      parameters:
+        - name: electionId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Election started
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Election"
+
+  /elections/{electionId}/close:
+    post:
+      operationId: closeElection
+      tags: [elections]
+      summary: Close an election
+      parameters:
+        - name: electionId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Election closed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Election"
+
+  /elections/{electionId}/results:
+    get:
+      operationId: getElectionResults
+      tags: [elections]
+      summary: Get election results
+      parameters:
+        - name: electionId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Election results
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ElectionResults"
+
+  # Candidates
+  /elections/{electionId}/candidates:
+    get:
+      operationId: listCandidates
+      tags: [candidates]
+      summary: List candidates for an election
+      parameters:
+        - name: electionId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: List of candidates
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Candidate"
+    post:
+      operationId: createCandidate
+      tags: [candidates]
+      summary: Add a candidate to an election
+      parameters:
+        - name: electionId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateCandidateRequest"
+      responses:
+        "201":
+          description: Candidate added
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Candidate"
+
+  /elections/{electionId}/candidates/{candidateId}:
+    patch:
+      operationId: updateCandidate
+      tags: [candidates]
+      summary: Update candidate
+      parameters:
+        - name: electionId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: candidateId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateCandidateRequest"
+      responses:
+        "200":
+          description: Candidate updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Candidate"
+    delete:
+      operationId: deleteCandidate
+      tags: [candidates]
+      summary: Remove candidate
+      parameters:
+        - name: electionId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: candidateId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Candidate removed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponse"
+
+  # Voting
+  /elections/{electionId}/vote:
+    post:
+      operationId: castVote
+      tags: [votes]
+      summary: Cast a vote in an election
+      parameters:
+        - name: electionId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CastVoteRequest"
+      responses:
+        "200":
+          description: Vote cast
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VoteResponse"
+        "400":
+          description: Already voted or invalid
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /elections/{electionId}/check-voted:
+    get:
+      operationId: checkVoted
+      tags: [votes]
+      summary: Check if voter has voted
+      parameters:
+        - name: electionId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Vote status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VoteStatusResponse"
+
+  # Payments
+  /payments/initiate:
+    post:
+      operationId: initiatePayment
+      tags: [payments]
+      summary: Initiate payment for voting access
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/InitiatePaymentRequest"
+      responses:
+        "200":
+          description: Payment initiated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PaymentInitResponse"
+
+  /payments/verify:
+    post:
+      operationId: verifyPayment
+      tags: [payments]
+      summary: Verify payment status
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/VerifyPaymentRequest"
+      responses:
+        "200":
+          description: Payment verified
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PaymentVerifyResponse"
+
+  /payments/webhook:
+    post:
+      operationId: paymentWebhook
+      tags: [payments]
+      summary: Paystack webhook handler
+      responses:
+        "200":
+          description: Webhook handled
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponse"
+
+  # Analytics
+  /analytics/overview:
+    get:
+      operationId: getAnalyticsOverview
+      tags: [analytics]
+      summary: Get platform overview analytics
+      parameters:
+        - name: schoolId
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Analytics overview
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AnalyticsOverview"
+
+  /analytics/elections/{electionId}:
+    get:
+      operationId: getElectionAnalytics
+      tags: [analytics]
+      summary: Get detailed analytics for an election
+      parameters:
+        - name: electionId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Election analytics
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ElectionAnalytics"
+
+  # Users
+  /users:
+    get:
+      operationId: listUsers
+      tags: [users]
+      summary: List users
+      parameters:
+        - name: schoolId
+          in: query
+          schema:
+            type: string
+        - name: role
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: List of users
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/User"
+
+  /users/{userId}:
+    get:
+      operationId: getUser
+      tags: [users]
+      summary: Get user by ID
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: User details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+    patch:
+      operationId: updateUser
+      tags: [users]
+      summary: Update user
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateUserRequest"
+      responses:
+        "200":
+          description: User updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+
+  /users/{userId}/verify-otp:
+    post:
+      operationId: verifyOtp
+      tags: [users]
+      summary: Verify OTP for voter identity
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/VerifyOtpRequest"
+      responses:
+        "200":
+          description: OTP verified
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponse"
+
+  /users/send-otp:
+    post:
+      operationId: sendOtp
+      tags: [users]
+      summary: Send OTP to phone
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SendOtpRequest"
+      responses:
+        "200":
+          description: OTP sent
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponse"
+
+components:
+  schemas:
+    HealthStatus:
+      type: object
+      properties:
+        status:
+          type: string
+      required: [status]
+
+    SuccessResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        message:
+          type: string
+      required: [success]
+
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+        message:
+          type: string
+      required: [error, message]
+
+    # Auth Schemas
+    RegisterRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        email:
+          type: string
+        password:
+          type: string
+        phone:
+          type: string
+        role:
+          type: string
+          enum: [super_admin, school_admin, candidate, voter]
+        schoolId:
+          type: string
+        studentId:
+          type: string
+      required: [name, email, password, role]
+
+    LoginRequest:
+      type: object
+      properties:
+        email:
+          type: string
+        password:
+          type: string
+      required: [email, password]
+
+    AuthResponse:
+      type: object
+      properties:
+        user:
+          $ref: "#/components/schemas/User"
+        token:
+          type: string
+      required: [user, token]
+
+    # User
+    User:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        email:
+          type: string
+        phone:
+          type: string
+        role:
+          type: string
+          enum: [super_admin, school_admin, candidate, voter]
+        schoolId:
+          type: string
+        studentId:
+          type: string
+        isVerified:
+          type: boolean
+        isPhoneVerified:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
+      required: [id, name, email, role, isVerified, isPhoneVerified, createdAt]
+
+    UpdateUserRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        phone:
+          type: string
+        role:
+          type: string
+          enum: [super_admin, school_admin, candidate, voter]
+
+    SendOtpRequest:
+      type: object
+      properties:
+        phone:
+          type: string
+      required: [phone]
+
+    VerifyOtpRequest:
+      type: object
+      properties:
+        otp:
+          type: string
+      required: [otp]
+
+    # School
+    School:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        slug:
+          type: string
+        email:
+          type: string
+        phone:
+          type: string
+        address:
+          type: string
+        country:
+          type: string
+        logoUrl:
+          type: string
+        plan:
+          type: string
+          enum: [free, basic, pro, enterprise]
+        isActive:
+          type: boolean
+        totalElections:
+          type: integer
+        totalVoters:
+          type: integer
+        createdAt:
+          type: string
+          format: date-time
+      required: [id, name, slug, plan, isActive, totalElections, totalVoters, createdAt]
+
+    CreateSchoolRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        email:
+          type: string
+        phone:
+          type: string
+        address:
+          type: string
+        country:
+          type: string
+        plan:
+          type: string
+          enum: [free, basic, pro, enterprise]
+      required: [name, email, country]
+
+    UpdateSchoolRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        email:
+          type: string
+        phone:
+          type: string
+        address:
+          type: string
+        logoUrl:
+          type: string
+        isActive:
+          type: boolean
+        plan:
+          type: string
+          enum: [free, basic, pro, enterprise]
+
+    # Elections
+    Election:
+      type: object
+      properties:
+        id:
+          type: string
+        title:
+          type: string
+        description:
+          type: string
+        schoolId:
+          type: string
+        schoolName:
+          type: string
+        status:
+          type: string
+          enum: [draft, active, closed, cancelled]
+        votingType:
+          type: string
+          enum: [web, ussd, both]
+        startDate:
+          type: string
+          format: date-time
+        endDate:
+          type: string
+          format: date-time
+        requiresPayment:
+          type: boolean
+        votingFee:
+          type: number
+        currency:
+          type: string
+        totalVotes:
+          type: integer
+        totalCandidates:
+          type: integer
+        allowMultiplePositions:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
+      required: [id, title, schoolId, status, votingType, startDate, endDate, requiresPayment, totalVotes, totalCandidates, createdAt]
+
+    ElectionDetail:
+      allOf:
+        - $ref: "#/components/schemas/Election"
+        - type: object
+          properties:
+            candidates:
+              type: array
+              items:
+                $ref: "#/components/schemas/Candidate"
+            positions:
+              type: array
+              items:
+                type: string
+
+    CreateElectionRequest:
+      type: object
+      properties:
+        title:
+          type: string
+        description:
+          type: string
+        schoolId:
+          type: string
+        votingType:
+          type: string
+          enum: [web, ussd, both]
+        startDate:
+          type: string
+          format: date-time
+        endDate:
+          type: string
+          format: date-time
+        requiresPayment:
+          type: boolean
+        votingFee:
+          type: number
+        currency:
+          type: string
+        allowMultiplePositions:
+          type: boolean
+      required: [title, schoolId, votingType, startDate, endDate]
+
+    UpdateElectionRequest:
+      type: object
+      properties:
+        title:
+          type: string
+        description:
+          type: string
+        status:
+          type: string
+          enum: [draft, active, closed, cancelled]
+        startDate:
+          type: string
+          format: date-time
+        endDate:
+          type: string
+          format: date-time
+        requiresPayment:
+          type: boolean
+        votingFee:
+          type: number
+
+    ElectionResults:
+      type: object
+      properties:
+        electionId:
+          type: string
+        title:
+          type: string
+        status:
+          type: string
+        totalVotes:
+          type: integer
+        turnoutPercentage:
+          type: number
+        positions:
+          type: array
+          items:
+            $ref: "#/components/schemas/PositionResult"
+      required: [electionId, title, status, totalVotes, turnoutPercentage, positions]
+
+    PositionResult:
+      type: object
+      properties:
+        position:
+          type: string
+        candidates:
+          type: array
+          items:
+            $ref: "#/components/schemas/CandidateResult"
+        winner:
+          $ref: "#/components/schemas/CandidateResult"
+      required: [position, candidates]
+
+    CandidateResult:
+      type: object
+      properties:
+        candidateId:
+          type: string
+        name:
+          type: string
+        voteCount:
+          type: integer
+        percentage:
+          type: number
+        photoUrl:
+          type: string
+      required: [candidateId, name, voteCount, percentage]
+
+    # Candidates
+    Candidate:
+      type: object
+      properties:
+        id:
+          type: string
+        electionId:
+          type: string
+        userId:
+          type: string
+        name:
+          type: string
+        position:
+          type: string
+        manifesto:
+          type: string
+        photoUrl:
+          type: string
+        studentId:
+          type: string
+        department:
+          type: string
+        voteCount:
+          type: integer
+        isApproved:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
+      required: [id, electionId, name, position, voteCount, isApproved, createdAt]
+
+    CreateCandidateRequest:
+      type: object
+      properties:
+        userId:
+          type: string
+        name:
+          type: string
+        position:
+          type: string
+        manifesto:
+          type: string
+        photoUrl:
+          type: string
+        studentId:
+          type: string
+        department:
+          type: string
+      required: [name, position]
+
+    UpdateCandidateRequest:
+      type: object
+      properties:
+        position:
+          type: string
+        manifesto:
+          type: string
+        photoUrl:
+          type: string
+        isApproved:
+          type: boolean
+
+    # Votes
+    CastVoteRequest:
+      type: object
+      properties:
+        votes:
+          type: array
+          items:
+            $ref: "#/components/schemas/VoteEntry"
+        paymentReference:
+          type: string
+      required: [votes]
+
+    VoteEntry:
+      type: object
+      properties:
+        position:
+          type: string
+        candidateId:
+          type: string
+      required: [position, candidateId]
+
+    VoteResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        receiptCode:
+          type: string
+        message:
+          type: string
+      required: [success, receiptCode, message]
+
+    VoteStatusResponse:
+      type: object
+      properties:
+        hasVoted:
+          type: boolean
+        receiptCode:
+          type: string
+      required: [hasVoted]
+
+    # Payments
+    InitiatePaymentRequest:
+      type: object
+      properties:
+        electionId:
+          type: string
+        email:
+          type: string
+        phone:
+          type: string
+        amount:
+          type: number
+        paymentMethod:
+          type: string
+          enum: [card, mobile_money, bank_transfer]
+        mobileMoneyProvider:
+          type: string
+          enum: [mtn, vodafone, airteltigo]
+      required: [electionId, email, amount, paymentMethod]
+
+    PaymentInitResponse:
+      type: object
+      properties:
+        reference:
+          type: string
+        authorizationUrl:
+          type: string
+        status:
+          type: string
+      required: [reference, status]
+
+    VerifyPaymentRequest:
+      type: object
+      properties:
+        reference:
+          type: string
+      required: [reference]
+
+    PaymentVerifyResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        reference:
+          type: string
+        status:
+          type: string
+        amount:
+          type: number
+        paidAt:
+          type: string
+          format: date-time
+      required: [success, reference, status]
+
+    # Analytics
+    AnalyticsOverview:
+      type: object
+      properties:
+        totalSchools:
+          type: integer
+        totalElections:
+          type: integer
+        activeElections:
+          type: integer
+        totalVotes:
+          type: integer
+        totalRevenue:
+          type: number
+        recentActivity:
+          type: array
+          items:
+            $ref: "#/components/schemas/ActivityItem"
+        electionsByStatus:
+          type: array
+          items:
+            $ref: "#/components/schemas/StatusCount"
+        votesByDay:
+          type: array
+          items:
+            $ref: "#/components/schemas/DayCount"
+      required: [totalSchools, totalElections, activeElections, totalVotes, totalRevenue, recentActivity, electionsByStatus, votesByDay]
+
+    ElectionAnalytics:
+      type: object
+      properties:
+        electionId:
+          type: string
+        title:
+          type: string
+        totalRegisteredVoters:
+          type: integer
+        totalVotes:
+          type: integer
+        turnoutPercentage:
+          type: number
+        votesByHour:
+          type: array
+          items:
+            $ref: "#/components/schemas/HourCount"
+        votesByMethod:
+          type: array
+          items:
+            $ref: "#/components/schemas/MethodCount"
+        fraudAlerts:
+          type: integer
+      required: [electionId, title, totalRegisteredVoters, totalVotes, turnoutPercentage, votesByHour, votesByMethod, fraudAlerts]
+
+    ActivityItem:
+      type: object
+      properties:
+        id:
+          type: string
+        type:
+          type: string
+        message:
+          type: string
+        timestamp:
+          type: string
+          format: date-time
+      required: [id, type, message, timestamp]
+
+    StatusCount:
+      type: object
+      properties:
+        status:
+          type: string
+        count:
+          type: integer
+      required: [status, count]
+
+    DayCount:
+      type: object
+      properties:
+        date:
+          type: string
+        count:
+          type: integer
+      required: [date, count]
+
+    HourCount:
+      type: object
+      properties:
+        hour:
+          type: string
+        count:
+          type: integer
+      required: [hour, count]
+
+    MethodCount:
+      type: object
+      properties:
+        method:
+          type: string
+        count:
+          type: integer
+      required: [method, count]

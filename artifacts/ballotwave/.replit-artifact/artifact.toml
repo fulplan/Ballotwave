@@ -1,0 +1,31 @@
+kind = "web"
+previewPath = "/"
+title = "BallotWave"
+version = "1.0.0"
+id = "artifacts/ballotwave"
+router = "path"
+
+[[integratedSkills]]
+name = "react-vite"
+version = "1.0.0"
+
+[[services]]
+localPort = 26139
+name = "web"
+paths = ["/"]
+
+[services.development]
+run = "pnpm --filter @workspace/ballotwave run dev"
+
+[services.env]
+PORT = "26139"
+BASE_PATH = "/"
+
+[services.production]
+build = ["pnpm", "--filter", "@workspace/ballotwave", "run", "build"]
+publicDir = "artifacts/ballotwave/dist/public"
+serve = "static"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"

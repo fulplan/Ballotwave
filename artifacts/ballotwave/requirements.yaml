@@ -1,0 +1,25 @@
+packages:
+  "framer-motion": "Animations for candidate cards, page transitions, and landing page elements"
+  "recharts": "Beautiful data visualization for the analytics dashboard and election results"
+  "@hookform/resolvers": "Zod schema validation for all forms (login, register, create election, etc.)"
+  "react-hook-form": "Form state management"
+  "zod": "Schema validation"
+  "clsx": "Utility for constructing className strings conditionally"
+  "tailwind-merge": "Utility for merging tailwind classes safely"
+  "date-fns": "For formatting election start and end dates beautifully"
+
+images:
+  - path: "artifacts/ballotwave/public/images/hero-bg.png"
+    description: "Abstract geometric background in deep vibrant teal and dark blue with subtle wave patterns, professional African fintech aesthetic, modern and clean"
+    aspect_ratio: "16:9"
+  - path: "artifacts/ballotwave/public/images/auth-bg.png"
+    description: "Soft abstract gradient shapes in deep green and navy blue, professional, secure and trustworthy aesthetic"
+    aspect_ratio: "9:16"
+  - path: "artifacts/ballotwave/public/images/africa-map.png"
+    description: "Minimalist dotted network map of Africa in vibrant teal color on a completely transparent background"
+    aspect_ratio: "1:1"
+
+notes:
+  - Using a global fetch interceptor in App.tsx to automatically append the JWT token from localStorage to all API requests made by the generated orval customFetch client.
+  - Assuming the role field determines the dashboard view.
+  - Payment flow is mocked to simulate mobile money USSD prompt via a modal before casting a vote.

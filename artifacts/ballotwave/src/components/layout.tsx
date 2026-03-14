@@ -4,9 +4,10 @@ import { AppSidebar } from "./app-sidebar";
 import { useAuth } from "@/hooks/use-auth";
 import { Redirect } from "wouter";
 import { Loader2 } from "lucide-react";
+import { BottomNav } from "./bottom-nav";
 
 export function DashboardLayout({ children }: { children: ReactNode }) {
-  const { isAuthenticated, isLoading } = useAuth();
+  const { isAuthenticated, isLoading, user } = useAuth();
 
   if (isLoading) {
     return (
@@ -20,6 +21,8 @@ export function DashboardLayout({ children }: { children: ReactNode }) {
     return <Redirect to="/login" />;
   }
 
+  const isVoter = user?.role === "voter";
+
   return (
     <SidebarProvider>
       <div className="flex h-screen w-full bg-background overflow-hidden">
@@ -30,13 +33,14 @@ export function DashboardLayout({ children }: { children: ReactNode }) {
               <SidebarTrigger data-testid="button-sidebar-toggle" />
             </div>
           </header>
-          <main className="flex-1 overflow-auto p-6 md:p-8">
+          <main className={`flex-1 overflow-auto p-6 md:p-8 ${isVoter ? "pb-20 md:pb-8" : ""}`}>
             <div className="max-w-7xl mx-auto">
               {children}
             </div>
           </main>
         </div>
       </div>
+      {isVoter && <BottomNav />}
     </SidebarProvider>
   );
 }

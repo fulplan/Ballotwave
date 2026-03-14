@@ -1,0 +1,264 @@
+# BallotWave — AI Build Prompt
+
+You are building **BallotWave**, a multi-tenant SaaS digital voting platform for secondary schools and universities in West Africa. Build the complete application based on the specification below.
+
+---
+
+## Project Name
+**BallotWave**
+
+## One-Line Description
+A secure, multi-channel digital voting platform for schools and universities — accessible via Web, Mobile PWA, and USSD (no internet required).
+
+---
+
+## Core Features to Build
+
+### 1. Multi-Tenant Architecture
+- Each school is an isolated tenant with its own PostgreSQL schema
+- Subdomain routing: `school.ballotwave.com`
+- Tenant-scoped JWTs with `tenant_id` claim validated on every request
+- Tenant-namespaced file storage for candidate photos and PDFs
+
+---
+
+### 2. User Roles (7 Roles)
+| Role | Scope | Key Ability |
+|---|---|---|
+| Platform Owner | Global | Full access — all tenants, billing, settings |
+| School Admin | Institution | Manage departments, users, elections, billing |
+| Electoral Officer | Department | Create elections, approve candidates, publish results |
+| Candidate | Election | Submit nomination, view own results |
+| Student Voter | Election | Cast votes, view receipts |
+| Observer / Auditor | Configurable | Read-only audit logs and results |
+| Public Viewer | Public | View published results, no login required |
+
+---
+
+### 3. Voting Channels
+
+#### Web Portal (PWA)
+- Student ID + OTP login (no password). Session expires in 30 min.
+- Filtered election listing by department and year level
+- Candidate profiles: photo, manifesto PDF, optional video
+- Vote flow: Select → Confirm → Cast → SHA-256 receipt
+- Live animated results after polls close
+- WCAG 2.1 AA compliant, installable PWA
+
+#### USSD Voting (No Internet Required)
+- Short code format: `*XXX*SCHOOLCODE#`
+- Auth: phone number auto-detected + 4-digit PIN
+- Numbered menus: election → candidate → confirm. `0` = back
+- Confirmation SMS sent after vote (no data needed)
+- Session timeout: 90 seconds (telco standard), progress saved
+- PIN brute-force lock: 5 failed attempts = 1 hour lockout
+- **USSD Gateway: Arkesel only**
+- Language support: English default, admin can configure local language (e.g. Twi, Ga, Hausa)
+
+---
+
+### 4. Election Management
+
+#### Election Builder
+- Election types: Single-position, Multi-position, Referendum (Yes/No)
+- Scope: All-school, specific departments, specific year levels
+- Voting methods: First Past The Post, Ranked Choice, Two-Round Runoff
+- Scheduled open/close (auto-opens and auto-closes)
+- Toggle: live vote counts visible during voting or hidden until close
+- Auto-generate PDF results certificate with digital signature
+
+#### Candidate Nomination Workflow
+1. Electoral Officer opens nomination with configurable form
+2. Candidate submits: name, photo (max 2MB), manifesto PDF (max 5MB), optional video link
+3. Officer reviews: Approve / Reject (with reason) / Request Revision
+4. Approved candidates notified by SMS. Profile published to portal.
+5. Nomination period closes — candidate list locked.
+
+#### Voter Eligibility Engine
+Enforce at vote-cast time (not just display time):
+- Active enrollment status
+- Department membership
+- Year level match
+- One-vote-per-student-per-position (UNIQUE DB constraint)
+
+---
+
+### 5. Dashboards
+
+#### Platform Owner Dashboard
+- Revenue: MRR, ARR, 12-month trend, by plan tier and school
+- All tenants list: subscription status, vote volume, last active
+- USSD usage: sessions per school, gateway cost vs revenue
+- Platform health: API uptime, error rates, ongoing elections
+- Payout settings: configure cut % per tier, per-transaction fees
+- Feature flags: enable/disable features per tenant
+- Invoice manager: auto-generated monthly invoices
+
+#### School Admin Dashboard
+- All elections across departments with status (Upcoming/Live/Closed)
+- Voter turnout heatmap by department
+- User management: add Electoral Officers, bulk import students via CSV
+- Department manager: create/rename/archive departments
+- Billing portal: plan, usage, invoices, upgrade
+- Dispute log: student-reported voting issues
+- Notification center: schedule SMS/email blasts
+
+#### Electoral Officer Dashboard
+- My elections: create, edit, view live, close
+- Nomination queue: approve/reject candidates
+- Live vote monitor (hidden from voters by default)
+- Publish results: preview → publish → auto-notify all candidates
+- Results export: PDF certificate, Excel, JSON
+
+#### Student Voting Portal
+- Active election cards with countdown timer and voted/not-voted status
+- Candidate profiles with in-browser PDF manifesto viewer
+- Voting screen: radio select (single choice) or ranked drag-and-drop
+- Vote confirmation screen before final submit
+- Receipt page: SHA-256 hash, downloadable PDF
+- Post-close: animated results charts
+- In-app notifications
+
+---
+
+### 6. Public Results Page
+- Auto-generated at: `ballotwave.com/{school-slug}/{election-slug}`
+- No login required
+- Live animated bar/donut charts, auto-refresh every 5 seconds
+- Candidate cards: photo, vote count, percentage
+- Live turnout counter
+- Shareable URL with Open Graph meta for social preview
+- One-line HTML embed widget for schools to paste on their website
+- Auto-generated QR code for notice boards
+- Auto-generated PDF results certificate
+- Winner highlighted with confetti animation on final publish
+- Anonymous vote verification: enter receipt hash → confirm vote counted
+
+---
+
+### 7. Security & Anti-Fraud
+- `UNIQUE` DB constraint on `(student_id, position_id)` — database level, not just app level
+- Votes are append-only — no UPDATE or DELETE ever
+- Anonymous vote storage: hashed student ID + encrypted candidate choice
+- SHA-256 receipt commitment scheme for anonymous vote verification
+- Duplicate IP detection with Electoral Officer alert
+- ML anomaly detection: vote velocity spikes trigger admin alert
+- OTP login: 10-minute expiry. JWT: 30-minute expiry with rotating refresh tokens
+- Cloudflare WAF + rate limiting: 100 req/min per IP on voting endpoints
+- AES-256 encryption at rest, TLS 1.3 in transit
+- All actions immutably timestamped in audit log
+
+---
+
+### 8. Notifications
+| Event | Channel | Recipient |
+|---|---|---|
+| Election opened | SMS + Email + In-app | All eligible voters |
+| Voting deadline reminder (1hr before close) | SMS | Voters who haven't voted |
+| Vote cast confirmation | SMS + In-app | Voter |
+| Nomination submitted | Email | Candidate + Officer |
+| Nomination approved/rejected | SMS + Email | Candidate |
+| Results published | SMS + Email + In-app | All voters + candidates |
+| Winner declared | SMS | Winning candidate |
+| Anomaly alert | Email + In-app | Officer + School Admin |
+| Subscription renewal | Email | School Admin |
+| Payment failed | Email + SMS | School Admin |
+
+---
+
+### 9. Monetization & Billing
+
+#### Subscription Plans
+| Plan | Price (GHS/mo) | Departments | Max Voters |
+|---|---|---|---|
+| Starter | 150 | 1 | 500 |
+| Growth | 450 | 5 | 5,000 |
+| University | 1,200 | Unlimited | Unlimited |
+| Enterprise | Custom | Unlimited | Unlimited |
+
+#### Per-Transaction Fees
+- Web vote: included in subscription
+- USSD vote: GHS 0.05/vote (billed monthly to school)
+- SMS notification: GHS 0.08/message
+- Email: free on all plans
+- Results PDF certificate: GHS 10/election (free on University+)
+- Overage voters: GHS 0.20/student/month
+
+#### Owner Monetization Settings
+- Set platform cut % per tier
+- Override pricing per individual school (grandfather rates)
+- Create promo codes (% discount, flat discount, free trial extensions)
+- Set USSD fee pass-through (gateway cost + markup)
+- Toggle add-ons per plan tier
+- View pending payouts and reconciliation reports
+- Set invoice generation date and grace period
+
+#### Payment Processor
+- **Paystack only** — card, mobile money, USSD payments
+- Paystack webhook reconciliation for subscription events
+
+---
+
+### 10. Integrations
+
+#### USSD Gateway
+- **Arkesel only** (Ghana-focused)
+
+#### Payment
+- **Paystack only**
+
+#### Communication
+- Arkesel SMS for all outbound SMS
+- SendGrid or Mailgun for transactional email
+- Firebase Cloud Messaging for mobile push
+
+#### Public REST API (Enterprise plan add-on)
+| Endpoint | Method | Description |
+|---|---|---|
+| `/api/elections` | GET | List all elections for tenant |
+| `/api/elections/:id/results` | GET | Full results for closed election |
+| `/api/students/bulk-import` | POST | Bulk import students from CSV/JSON |
+| `/api/webhooks/configure` | POST | Register webhook URLs for election events |
+| `/api/analytics/turnout` | GET | Voter turnout by department and year level |
+
+---
+
+## Recommended Tech Stack
+
+| Layer | Technology |
+|---|---|
+| Frontend | Next.js 14 (App Router) |
+| UI | Tailwind CSS + shadcn/ui |
+| Backend | Node.js + Fastify |
+| Database | PostgreSQL (Supabase, schema-per-tenant) |
+| Real-time | Supabase Realtime / WebSockets |
+| Job Queue | BullMQ + Redis |
+| Auth | NextAuth.js + custom OTP |
+| File Storage | Supabase Storage / S3 |
+| USSD | Arkesel API |
+| Payments | Paystack Node.js SDK |
+| CDN / Security | Cloudflare WAF |
+| Hosting | Vercel (frontend) + Railway (backend) |
+| Monitoring | Sentry + PostHog + Uptime Robot |
+
+---
+
+## Development Phases
+
+| Phase | Weeks | Deliverables |
+|---|---|---|
+| 1 — MVP | 1–6 | Auth, election builder, web voting, results page, school admin dashboard |
+| 2 — USSD & Notifications | 7–10 | USSD voting (Arkesel), SMS/email notifications, vote receipts, officer dashboard |
+| 3 — Monetization | 11–14 | Paystack billing, owner monetization dashboard, plan enforcement, invoicing |
+| 4 — Analytics & Security | 15–18 | Anomaly detection, audit logs, advanced analytics, observer role, export |
+| 5 — Premium Features | 19–24 | Mobile PWA, white-label, ranked choice, API access |
+| 6 — Scale | Post-launch | Multi-country telco integrations, AI election insights, blockchain audit option |
+
+---
+
+## Key Constraints
+- USSD gateway: **Arkesel only** (no Africa's Talking, Hubtel, or Twilio)
+- Payment processor: **Paystack only** (no Flutterwave)
+- One vote per student per position enforced at the **database level** via UNIQUE constraint
+- Votes are **append-only** — no updates or deletes permitted on vote records
+- All JWTs must include and validate `tenant​​​​​​​​​​​​​​​​

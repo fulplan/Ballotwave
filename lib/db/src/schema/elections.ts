@@ -1,4 +1,4 @@
-import { pgTable, text, boolean, integer, real, timestamp, pgEnum } from "drizzle-orm/pg-core";
+import { pgTable, text, boolean, integer, real, timestamp, pgEnum, json } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 import { schoolsTable } from "./schools";
@@ -12,6 +12,7 @@ export const electionsTable = pgTable("elections", {
   title: text("title").notNull(),
   description: text("description"),
   schoolId: text("school_id").notNull().references(() => schoolsTable.id),
+  departmentId: text("department_id"),
   createdById: text("created_by_id").references(() => usersTable.id),
   status: electionStatusEnum("status").notNull().default("draft"),
   votingType: votingTypeEnum("voting_type").notNull().default("web"),
@@ -22,7 +23,13 @@ export const electionsTable = pgTable("elections", {
   currency: text("currency").default("GHS"),
   totalVotes: integer("total_votes").notNull().default(0),
   totalCandidates: integer("total_candidates").notNull().default(0),
+  registeredVoters: integer("registered_voters").notNull().default(0),
   allowMultiplePositions: boolean("allow_multiple_positions").notNull().default(true),
+  resultsPublished: boolean("results_published").notNull().default(false),
+  nominationsOpen: boolean("nominations_open").notNull().default(false),
+  slug: text("slug"),
+  eligibleDepartments: json("eligible_departments").$type<string[]>(),
+  eligibleYearLevels: json("eligible_year_levels").$type<string[]>(),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });

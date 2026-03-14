@@ -13,6 +13,7 @@ export const votesTable = pgTable("votes", {
   receiptCode: text("receipt_code").notNull(),
   paymentReference: text("payment_reference"),
   votingMethod: text("voting_method").notNull().default("web"),
+  channel: text("channel").notNull().default("web"),
   ipAddress: text("ip_address"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });

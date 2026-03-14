@@ -71,7 +71,8 @@ export function useAuth() {
 
   const routeBasedOnRole = (role: string) => {
     if (role === 'super_admin') setLocation('/dashboard/schools');
-    else if (role === 'school_admin') setLocation('/dashboard/elections');
+    else if (role === 'school_admin' || role === 'electoral_officer') setLocation('/dashboard/elections');
+    else if (role === 'observer') setLocation('/dashboard/elections');
     else setLocation('/dashboard');
   };
 
@@ -80,8 +81,10 @@ export function useAuth() {
     isLoading: userQuery.isLoading && !!token,
     isAuthenticated: !!userQuery.data,
     login: loginMutation.mutateAsync,
+    loginError: loginMutation.error,
     isLoggingIn: loginMutation.isPending,
     register: registerMutation.mutateAsync,
+    registerError: registerMutation.error,
     isRegistering: registerMutation.isPending,
     logout: logoutMutation.mutate,
     token

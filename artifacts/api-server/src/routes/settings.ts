@@ -44,7 +44,7 @@ router.get("/", requireAuth, async (req, res) => {
 
   const allKeys = getRegistryKeys();
   const existingRows = await db.select().from(platformSettingsTable);
-  const existingMap = new Map(existingRows.map((r: any) => [r.key, r]));
+  const existingMap = new Map(existingRows.map((r) => [r.key, r]));
   const now = new Date();
 
   for (const key of allKeys) {
@@ -58,7 +58,7 @@ router.get("/", requireAuth, async (req, res) => {
   }
 
   const rows = await db.select().from(platformSettingsTable);
-  const rowMap = new Map(rows.map((r: any) => [r.key, r]));
+  const rowMap = new Map(rows.map((r) => [r.key, r]));
 
   const categoryOrder: SettingCategory[] = ["api_keys", "platform_config", "feature_flags", "boot_time"];
   const groups: CategoryGroup[] = categoryOrder.map((cat) => {
@@ -148,8 +148,68 @@ router.patch("/", requireAuth, async (req, res) => {
     }
 
     res.json({ success: true, updated });
-  } catch {
+  } catch (err) {
+    console.error("Failed to update settings:", err);
     res.status(500).json({ error: "Internal Error", message: "Failed to update settings" });
+  }
+});
+
+router.get("/payouts", requireAuth, async (req, res) => {
+  const user = (req as any).user;
+  if (user.role !== "super_admin") {
+    res.status(403).json({ error: "Forbidden", message: "Super admin access required" });
+    return;
+  }
+  try {
+    const rows = await db.select().from(platformSettingsTable);
+    const map = new Map(rows.map((r) => [r.key, r.value]));
+    const payoutConfig = {
+      platformCutFree: parseFloat(map.get("payout_cut_free") || "10"),
+      platformCutBasic: parseFloat(map.get("payout_cut_basic") || "10"),
+      platformCutPro: parseFloat(map.get("payout_cut_pro") || "8"),
+      platformCutEnterprise: parseFloat(map.get("payout_cut_enterprise") || "5"),
+      ussdFeePassthrough: map.get("payout_ussd_passthrough") === "true",
+      invoiceDay: parseInt(map.get("invoice_generation_day") || "1"),
+      paymentGraceDays: parseInt(map.get("payment_grace_days") || "14"),
+      schoolOverrides: JSON.parse(map.get("payout_school_overrides") || "{}"),
+    };
+    res.json(payoutConfig);
+  } catch (err) {
+    console.error("Failed to load payout settings:", err);
+    res.status(500).json({ error: "Internal Error", message: "Failed to load payout settings" });
+  }
+});
+
+router.patch("/payouts", requireAuth, async (req, res) => {
+  const user = (req as any).user;
+  if (user.role !== "super_admin") {
+    res.status(403).json({ error: "Forbidden", message: "Super admin access required" });
+    return;
+  }
+  try {
+    const body = req.body;
+    const now = new Date();
+    const updates: [string, string][] = [];
+
+    if (body.platformCutFree !== undefined) updates.push(["payout_cut_free", String(body.platformCutFree)]);
+    if (body.platformCutBasic !== undefined) updates.push(["payout_cut_basic", String(body.platformCutBasic)]);
+    if (body.platformCutPro !== undefined) updates.push(["payout_cut_pro", String(body.platformCutPro)]);
+    if (body.platformCutEnterprise !== undefined) updates.push(["payout_cut_enterprise", String(body.platformCutEnterprise)]);
+    if (body.ussdFeePassthrough !== undefined) updates.push(["payout_ussd_passthrough", String(body.ussdFeePassthrough)]);
+    if (body.invoiceDay !== undefined) updates.push(["invoice_generation_day", String(body.invoiceDay)]);
+    if (body.paymentGraceDays !== undefined) updates.push(["payment_grace_days", String(body.paymentGraceDays)]);
+    if (body.schoolOverrides !== undefined) updates.push(["payout_school_overrides", JSON.stringify(body.schoolOverrides)]);
+
+    for (const [key, value] of updates) {
+      await db.insert(platformSettingsTable)
+        .values({ key, value, updatedAt: now })
+        .onConflictDoUpdate({ target: platformSettingsTable.key, set: { value, updatedAt: now } });
+    }
+
+    res.json({ success: true, updated: updates.length });
+  } catch (err) {
+    console.error("Failed to update payout settings:", err);
+    res.status(500).json({ error: "Internal Error", message: "Failed to update payout settings" });
   }
 });
 

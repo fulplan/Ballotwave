@@ -5,3 +5,15 @@ export * from "./candidates";
 export * from "./votes";
 export * from "./payments";
 export * from "./platform-settings";
+
+export * from "./departments";
+export * from "./notifications";
+export * from "./disputes";
+export * from "./audit-logs";
+export * from "./ussd-sessions";
+export * from "./ussd-lockouts";
+export * from "./ussd-session-logs";
+export * from "./candidate-applications";
+export * from "./notification-log";
+export * from "./invoices";
+export * from "./promo-codes";

@@ -2,7 +2,8 @@ import { useGetAnalyticsOverview } from "@workspace/api-client-react";
 import { DashboardLayout } from "@/components/layout";
 import { Card } from "@/components/ui/card";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from "recharts";
-import { Loader2, TrendingUp, Building2, Vote } from "lucide-react";
+import { TrendingUp, Building2, Vote } from "lucide-react";
+import { SkeletonStat } from "@/components/skeleton-cards";
 
 const COLORS = ['hsl(160, 84%, 39%)', 'hsl(222, 47%, 15%)', 'hsl(43, 74%, 66%)', 'hsl(0, 84%, 60%)'];
 
@@ -12,7 +13,12 @@ export default function AnalyticsPage() {
   if (isLoading || !data) {
     return (
       <DashboardLayout>
-        <div className="flex justify-center py-20"><Loader2 className="w-10 h-10 animate-spin text-primary" /></div>
+        <div className="space-y-6">
+          <div className="h-9 w-64 rounded-lg bg-primary/10 animate-pulse" />
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+            {[1,2,3,4].map(i => <SkeletonStat key={i} />)}
+          </div>
+        </div>
       </DashboardLayout>
     );
   }

@@ -1,4 +1,4 @@
-import { pgTable, text, boolean, integer, timestamp, pgEnum } from "drizzle-orm/pg-core";
+import { pgTable, text, boolean, integer, timestamp, pgEnum, jsonb } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 
@@ -17,6 +17,10 @@ export const schoolsTable = pgTable("schools", {
   isActive: boolean("is_active").notNull().default(true),
   totalElections: integer("total_elections").notNull().default(0),
   totalVoters: integer("total_voters").notNull().default(0),
+  ussdShortCode: text("ussd_short_code"),
+  ussdSchoolCode: text("ussd_school_code"),
+  ussdLanguage: text("ussd_language").default("en"),
+  ussdEnabled: boolean("ussd_enabled").notNull().default(false),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });

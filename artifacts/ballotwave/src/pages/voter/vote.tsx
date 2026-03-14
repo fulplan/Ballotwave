@@ -1,13 +1,15 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useParams, Link, useLocation } from "wouter";
 import { useGetElection, useListCandidates, useCastVote, useCheckVoted, useInitiatePayment } from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { Loader2, CheckCircle2, ShieldCheck, CreditCard, Lock } from "lucide-react";
+import { Loader2, CheckCircle2, ShieldCheck, CreditCard, Lock, WifiOff, Wifi, FileText, UserPlus } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useAuth } from "@/hooks/use-auth";
 import { motion, AnimatePresence } from "framer-motion";
 import { useToast } from "@/hooks/use-toast";
+
+const OFFLINE_QUEUE_KEY = "ballotwave_offline_votes";
 
 export default function VotePage() {
   const { user } = useAuth();
@@ -23,11 +25,47 @@ export default function VotePage() {
   const castVoteMutation = useCastVote();
   const initiatePaymentMutation = useInitiatePayment();
 
-  // state: { "President": "candidateId_123", "Secretary": "candidateId_456" }
   const [selections, setSelections] = useState<Record<string, string>>({});
   const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
   const [isProcessingPayment, setIsProcessingPayment] = useState(false);
   const [successReceipt, setSuccessReceipt] = useState<string | null>(null);
+  const [isOnline, setIsOnline] = useState(navigator.onLine);
+  const [voteQueued, setVoteQueued] = useState(false);
+  interface CandidateWithMedia {
+    id: string;
+    name: string;
+    position: string;
+    department?: string;
+    manifesto?: string;
+    manifestoPdfUrl?: string;
+    videoUrl?: string;
+    photoUrl?: string;
+  }
+  const [manifestoCandidate, setManifestoCandidate] = useState<CandidateWithMedia | null>(null);
+
+  useEffect(() => {
+    const handleOnline = async () => {
+      setIsOnline(true);
+      const queued = JSON.parse(localStorage.getItem(OFFLINE_QUEUE_KEY) || "[]");
+      const pending = queued.filter((q: any) => q.electionId === id);
+      if (pending.length > 0) {
+        toast({ title: "Back online!", description: "Submitting your queued vote..." });
+        for (const q of pending) {
+          try {
+            const res = await castVoteMutation.mutateAsync({ electionId: q.electionId, data: { votes: q.votes } as any });
+            setSuccessReceipt((res as any).receiptCode);
+            const updated = queued.filter((item: any) => item.ref !== q.ref);
+            localStorage.setItem(OFFLINE_QUEUE_KEY, JSON.stringify(updated));
+            setVoteQueued(false);
+          } catch {}
+        }
+      }
+    };
+    const handleOffline = () => setIsOnline(false);
+    window.addEventListener("online", handleOnline);
+    window.addEventListener("offline", handleOffline);
+    return () => { window.removeEventListener("online", handleOnline); window.removeEventListener("offline", handleOffline); };
+  }, [id]);
 
   if (electionLoading || candidatesLoading || statusLoading) {
     return <div className="min-h-screen flex justify-center items-center"><Loader2 className="w-10 h-10 animate-spin text-primary" /></div>;
@@ -76,10 +114,9 @@ export default function VotePage() {
     }
   };
 
-  const simulatePaymentAndVote = async () => {
+  const handlePaymentAndVote = async () => {
     setIsProcessingPayment(true);
     try {
-      // 1. Initiate (mock)
       const initRes = await initiatePaymentMutation.mutateAsync({
         data: {
           electionId: id,
@@ -89,11 +126,55 @@ export default function VotePage() {
           mobileMoneyProvider: "mtn"
         } as any
       });
-      // 2. Simulate user confirming on phone (delay)
-      await new Promise(res => setTimeout(res, 2000));
-      
-      // 3. Cast vote with reference
-      await executeVote(initRes.reference);
+
+      const { reference, authorizationUrl } = initRes as any;
+      const isDemo = authorizationUrl?.includes("simulated");
+
+      if (isDemo) {
+        await new Promise(res => setTimeout(res, 2500));
+        const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
+        const verifyRes = await fetch(`${BASE}/api/payments/verify`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ reference }),
+        });
+        const verifyData = await verifyRes.json();
+        if (!verifyData.success) throw new Error("Payment verification failed");
+        await executeVote(reference);
+      } else {
+        const popup = window.open(authorizationUrl, "_blank", "width=600,height=700");
+        let attempts = 0;
+        const maxAttempts = 60;
+        const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
+        await new Promise<void>((resolve, reject) => {
+          const poll = setInterval(async () => {
+            attempts++;
+            try {
+              const verifyRes = await fetch(`${BASE}/api/payments/verify`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ reference }),
+              });
+              const verifyData = await verifyRes.json();
+              if (verifyData.success) {
+                clearInterval(poll);
+                popup?.close();
+                await executeVote(reference);
+                resolve();
+              } else if (attempts >= maxAttempts) {
+                clearInterval(poll);
+                popup?.close();
+                reject(new Error("Payment timed out. Please try again."));
+              }
+            } catch (e) {
+              if (attempts >= maxAttempts) {
+                clearInterval(poll);
+                reject(e);
+              }
+            }
+          }, 3000);
+        });
+      }
     } catch (e: any) {
       toast({ title: "Payment Failed", description: e.message, variant: "destructive" });
     } finally {
@@ -103,8 +184,17 @@ export default function VotePage() {
   };
 
   const executeVote = async (paymentRef?: string) => {
+    const votesArray = Object.entries(selections).map(([position, candidateId]) => ({ position, candidateId }));
+    if (!navigator.onLine) {
+      const queueRef = `vote-${id}-${Date.now()}`;
+      const queue = JSON.parse(localStorage.getItem(OFFLINE_QUEUE_KEY) || "[]");
+      queue.push({ ref: queueRef, electionId: id, votes: votesArray, paymentRef, queuedAt: new Date().toISOString() });
+      localStorage.setItem(OFFLINE_QUEUE_KEY, JSON.stringify(queue));
+      setVoteQueued(true);
+      toast({ title: "Vote Queued", description: "No internet connection. Your vote will be submitted automatically when you're back online." });
+      return;
+    }
     try {
-      const votesArray = Object.entries(selections).map(([position, candidateId]) => ({ position, candidateId }));
       const res = await castVoteMutation.mutateAsync({ 
         electionId: id, 
         data: { votes: votesArray, paymentReference: paymentRef } as any
@@ -112,12 +202,33 @@ export default function VotePage() {
       setSuccessReceipt(res.receiptCode);
       toast({ title: "Success", description: "Your vote has been cast." });
     } catch (e: any) {
-      toast({ title: "Voting Failed", description: e.message, variant: "destructive" });
+      if (!navigator.onLine) {
+        const queueRef = `vote-${id}-${Date.now()}`;
+        const queue = JSON.parse(localStorage.getItem(OFFLINE_QUEUE_KEY) || "[]");
+        queue.push({ ref: queueRef, electionId: id, votes: votesArray, paymentRef, queuedAt: new Date().toISOString() });
+        localStorage.setItem(OFFLINE_QUEUE_KEY, JSON.stringify(queue));
+        setVoteQueued(true);
+        toast({ title: "Vote Queued", description: "Network error. Your vote will be submitted when connectivity is restored." });
+      } else {
+        toast({ title: "Voting Failed", description: e.message, variant: "destructive" });
+      }
     }
   };
 
   return (
     <div className="min-h-screen bg-muted/20 pb-20">
+      {!isOnline && (
+        <div className="bg-amber-500 text-white text-sm font-semibold text-center py-2 px-4 flex items-center justify-center gap-2">
+          <WifiOff className="w-4 h-4" />
+          You are offline. {voteQueued ? "Your vote is queued and will be submitted when connectivity is restored." : "Votes will be saved and submitted when you reconnect."}
+        </div>
+      )}
+      {isOnline && voteQueued && (
+        <div className="bg-emerald-500 text-white text-sm font-semibold text-center py-2 px-4 flex items-center justify-center gap-2">
+          <Wifi className="w-4 h-4" />
+          Back online! Submitting your queued vote...
+        </div>
+      )}
       <header className="bg-primary text-primary-foreground py-6 px-4 shadow-md sticky top-0 z-20">
         <div className="max-w-4xl mx-auto flex items-center justify-between">
           <div>
@@ -131,6 +242,18 @@ export default function VotePage() {
           </Link>
         </div>
       </header>
+
+      {(election as { nominationsOpen?: boolean }).nominationsOpen && (
+        <div className="bg-violet-500 text-white text-sm font-semibold text-center py-2.5 px-4 flex items-center justify-center gap-2">
+          <UserPlus className="w-4 h-4" />
+          Nominations are open for this election!
+          <Link href={`/dashboard/elections/${id}?tab=nominations`}>
+            <Button size="sm" variant="secondary" className="ml-2 h-7 text-xs rounded-lg bg-white/20 hover:bg-white/30 text-white border-0">
+              Nominate Yourself
+            </Button>
+          </Link>
+        </div>
+      )}
 
       <main className="max-w-4xl mx-auto p-4 mt-8 space-y-12">
         {positions.map((position, idx) => {
@@ -161,6 +284,14 @@ export default function VotePage() {
                       <div className="flex-1">
                         <h3 className="font-bold text-lg text-foreground">{candidate.name}</h3>
                         <p className="text-sm text-muted-foreground line-clamp-1">{candidate.department || "Independent"}</p>
+                        {(candidate.manifesto || (candidate as CandidateWithMedia).manifestoPdfUrl) && (
+                          <button
+                            className="text-xs text-primary hover:underline mt-1 flex items-center gap-1"
+                            onClick={(e) => { e.stopPropagation(); setManifestoCandidate(candidate as CandidateWithMedia); }}
+                          >
+                            <FileText className="w-3 h-3" /> View Manifesto
+                          </button>
+                        )}
                       </div>
                       <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center shrink-0 transition-colors
                         ${isSelected ? 'border-primary bg-primary text-white' : 'border-muted-foreground/30'}`}>
@@ -191,7 +322,42 @@ export default function VotePage() {
         </div>
       </main>
 
-      {/* Payment Dialog */}
+      <Dialog open={!!manifestoCandidate} onOpenChange={() => setManifestoCandidate(null)}>
+        <DialogContent className="sm:max-w-3xl w-[95vw] rounded-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <FileText className="w-5 h-5" /> {manifestoCandidate?.name}'s Manifesto
+            </DialogTitle>
+          </DialogHeader>
+          <div className="mt-2">
+            <p className="text-xs text-muted-foreground mb-1">
+              Running for <span className="font-medium text-foreground">{manifestoCandidate?.position}</span>
+              {manifestoCandidate?.department && <> &middot; {manifestoCandidate.department}</>}
+            </p>
+            {manifestoCandidate?.manifestoPdfUrl && (manifestoCandidate.manifestoPdfUrl.startsWith("data:application/pdf") || manifestoCandidate.manifestoPdfUrl.startsWith("https://")) && (
+              <iframe
+                src={manifestoCandidate.manifestoPdfUrl}
+                className="w-full h-[60vh] rounded-xl border border-border mt-3"
+                title="Manifesto PDF"
+                sandbox="allow-same-origin"
+              />
+            )}
+            {manifestoCandidate?.manifesto && (
+              <div className="prose prose-sm dark:prose-invert max-w-none whitespace-pre-wrap text-sm leading-relaxed mt-3">
+                {manifestoCandidate?.manifesto}
+              </div>
+            )}
+            {manifestoCandidate?.videoUrl && (
+              <div className="mt-3">
+                <a href={manifestoCandidate.videoUrl} target="_blank" rel="noopener noreferrer" className="text-sm text-primary hover:underline flex items-center gap-1">
+                  🎬 Watch Campaign Video
+                </a>
+              </div>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
+
       <Dialog open={isPaymentModalOpen} onOpenChange={setIsPaymentModalOpen}>
         <DialogContent className="sm:max-w-md rounded-3xl text-center p-8">
           <div className="mx-auto w-16 h-16 bg-primary/10 rounded-full flex items-center justify-center mb-4">
@@ -202,13 +368,13 @@ export default function VotePage() {
             This election requires a fee of <strong className="text-foreground">{election.currency} {election.votingFee}</strong> to cast a ballot.
           </p>
           <div className="bg-muted/50 rounded-xl p-4 mb-6">
-            <p className="text-sm mb-2">We will send a prompt to your Mobile Money number to approve the payment.</p>
+            <p className="text-sm mb-2">You will be redirected to Paystack to complete your payment securely.</p>
             <div className="flex items-center justify-center gap-2 font-bold text-xl text-primary">
               <CreditCard className="w-6 h-6" /> {election.currency} {election.votingFee}
             </div>
           </div>
-          <Button onClick={simulatePaymentAndVote} disabled={isProcessingPayment} className="w-full h-14 text-lg rounded-xl">
-            {isProcessingPayment ? <><Loader2 className="w-5 h-5 mr-2 animate-spin" /> Waiting for approval...</> : "Pay & Cast Vote"}
+          <Button onClick={handlePaymentAndVote} disabled={isProcessingPayment} className="w-full h-14 text-lg rounded-xl">
+            {isProcessingPayment ? <><Loader2 className="w-5 h-5 mr-2 animate-spin" /> Processing payment...</> : "Pay & Cast Vote"}
           </Button>
         </DialogContent>
       </Dialog>

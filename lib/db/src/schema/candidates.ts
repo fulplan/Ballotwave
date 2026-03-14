@@ -11,6 +11,8 @@ export const candidatesTable = pgTable("candidates", {
   name: text("name").notNull(),
   position: text("position").notNull(),
   manifesto: text("manifesto"),
+  manifestoPdfUrl: text("manifesto_pdf_url"),
+  videoUrl: text("video_url"),
   photoUrl: text("photo_url"),
   studentId: text("student_id"),
   department: text("department"),

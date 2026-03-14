@@ -2,13 +2,12 @@ import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
-import { useLocation } from "wouter";
+import { useLocation, Link } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card } from "@/components/ui/card";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Vote, ArrowRight, Loader2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
@@ -21,7 +20,6 @@ const registerSchema = z.object({
   name: z.string().min(2, "Name is too short"),
   email: z.string().email("Invalid email address"),
   password: z.string().min(6, "Password must be at least 6 characters"),
-  role: z.enum(["super_admin", "school_admin", "voter"]),
 });
 
 export default function AuthPage({ isRegister = false }: { isRegister?: boolean }) {
@@ -36,7 +34,7 @@ export default function AuthPage({ isRegister = false }: { isRegister?: boolean 
 
   const registerForm = useForm<z.infer<typeof registerSchema>>({
     resolver: zodResolver(registerSchema),
-    defaultValues: { name: "", email: "", password: "", role: "voter" }
+    defaultValues: { name: "", email: "", password: "" }
   });
 
   const onLoginSubmit = async (data: z.infer<typeof loginSchema>) => {
@@ -50,7 +48,7 @@ export default function AuthPage({ isRegister = false }: { isRegister?: boolean 
 
   const onRegisterSubmit = async (data: z.infer<typeof registerSchema>) => {
     try {
-      await register({ ...data, role: data.role as any });
+      await register({ ...data } as any);
       toast({ title: "Account created", description: "Welcome to BallotWave!" });
     } catch (err: any) {
       toast({ title: "Registration failed", description: err.message || "Something went wrong", variant: "destructive" });
@@ -90,7 +88,7 @@ export default function AuthPage({ isRegister = false }: { isRegister?: boolean 
             <div className="space-y-2">
               <div className="flex items-center justify-between">
                 <Label htmlFor="password">Password</Label>
-                <span className="text-xs text-primary font-medium cursor-pointer hover:underline">Forgot password?</span>
+                <Link href="/forgot-password" className="text-xs text-primary font-medium hover:underline">Forgot password?</Link>
               </div>
               <Input id="password" type="password" placeholder="••••••••" {...loginForm.register("password")} className="h-12 rounded-xl bg-background" />
               {loginForm.formState.errors.password && <p className="text-sm text-destructive">{loginForm.formState.errors.password.message}</p>}
@@ -113,19 +111,6 @@ export default function AuthPage({ isRegister = false }: { isRegister?: boolean 
               <Label htmlFor="email">Email address</Label>
               <Input id="email" type="email" placeholder="you@example.com" {...registerForm.register("email")} className="h-12 rounded-xl bg-background" />
               {registerForm.formState.errors.email && <p className="text-sm text-destructive">{registerForm.formState.errors.email.message}</p>}
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="role">Account Type</Label>
-              <Select onValueChange={(val) => registerForm.setValue("role", val as any)} defaultValue="voter">
-                <SelectTrigger className="h-12 rounded-xl bg-background">
-                  <SelectValue placeholder="Select a role" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="voter">Student / Voter</SelectItem>
-                  <SelectItem value="school_admin">School Administrator</SelectItem>
-                  <SelectItem value="super_admin">Platform Admin</SelectItem>
-                </SelectContent>
-              </Select>
             </div>
             <div className="space-y-2">
               <Label htmlFor="password">Password</Label>

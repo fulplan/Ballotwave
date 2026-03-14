@@ -1,0 +1,37 @@
+#13 - Platform Owner Monetization Dashboard
+What & Why
+The spec defines a comprehensive monetization layer for the platform owner: MRR/ARR revenue tracking, per-school revenue breakdown, USSD cost management, promo codes, invoicing, and payout configuration. This is how BallotWave makes money. Currently the platform owner (super_admin) has only a basic schools list and analytics overview — there is no revenue visibility or billing controls.
+
+Done looks like
+Platform owner has a dedicated "Revenue" section in the super admin sidebar
+Revenue dashboard shows: MRR, ARR, 12-month revenue chart (bar), revenue by plan tier (donut), and a top-10 schools table sorted by revenue
+USSD cost tracker: total USSD sessions, total USSD votes, estimated gateway cost (sessions × GHS 0.05), and net revenue from USSD after costs
+Payout settings page: configure the platform cut % per plan tier (e.g. 10% on Starter, 8% on Growth), set per-transaction fee pass-through for USSD, and set a custom rate for individual schools
+Promo code manager: create codes with % discount or flat amount, optional expiry date, max uses, and targeted plan. View active/expired codes, usage count, and total discount given
+Invoice manager: auto-generated monthly invoices per school, downloadable as PDF. Shows line items: base subscription, USSD votes used, SMS notifications, overage students
+Platform settings: configure invoice generation day (1–28 of month) and payment grace period (days)
+School admin sees their own invoices in the Billing page (already planned in Task #5)
+Out of scope
+Stripe Connect or Paystack split payments (owner receives full Paystack payment; school reconciliation is manual)
+Automated payouts to schools
+Tax handling / VAT calculation
+Tasks
+DB schema: invoices + promo codes — Add invoices table (id, schoolId, periodStart, periodEnd, lineItems json, totalGhs, status: draft/sent/paid/overdue, pdfUrl, createdAt). Add promo_codes table (code, discountType: percent/flat, discountValue, planTarget, maxUses, usesCount, expiresAt, isActive). Push schema.
+Backend: revenue analytics — Add GET /api/analytics/revenue (super_admin only) returning MRR, ARR, monthly revenue array (last 12 months), revenue by plan tier, top schools by revenue. Calculate from payments table records.
+Backend: payout settings endpoints — Add GET/PATCH /api/settings/payouts (super_admin) storing platform cut % per tier and per-school overrides. Store in existing platform_settings table as JSON.
+Backend: promo code CRUD — Add GET/POST /api/promos and PATCH/DELETE /api/promos/:code (super_admin). Add POST /api/promos/validate (authenticated) to check a code during checkout and return the discounted price.
+Backend: invoice generation — Add a monthly cron job (1st of month) that generates invoice records for all active schools: query their subscription payments, USSD usage (from notification_log or ussd_sessions), and SMS usage. Store as draft. Add POST /api/invoices/:id/send to mark as sent and trigger an email to the school admin.
+Backend: school admin invoice access — Add GET /api/schools/:id/invoices returning the school's invoice history. Used by the school billing page (Task #5 update).
+Frontend: revenue dashboard page — Create /dashboard/revenue super-admin page with MRR/ARR stat cards, 12-month bar chart, revenue-by-tier donut, and top schools table. Add "Revenue" link to super admin sidebar.
+Frontend: payout settings page — Create /dashboard/settings/payouts showing per-tier cut % inputs and a per-school override table. Save via API on submit.
+Frontend: promo code manager — Create /dashboard/promos page with a create-code form and a table of all codes showing usage, status, and a delete button. Add to super admin sidebar.
+Frontend: invoice manager — Create /dashboard/invoices page for super admin listing all school invoices with status filters. Clicking an invoice shows line items and a "Send" button. Add invoice PDF download.
+Relevant files
+artifacts/api-server/src/routes/analytics.ts
+artifacts/api-server/src/routes/settings.ts
+artifacts/api-server/src/routes/payments.ts
+artifacts/api-server/src/index.ts
+lib/db/src/schema.ts
+artifacts/ballotwave/src/pages/dashboard/analytics.tsx
+artifacts/ballotwave/src/pages/dashboard/settings.tsx
+artifacts/ballotwave/src/components/app-sidebar.tsx

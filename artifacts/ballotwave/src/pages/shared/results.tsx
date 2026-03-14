@@ -2,7 +2,8 @@ import { useParams, Link } from "wouter";
 import { useGetElectionResults } from "@workspace/api-client-react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Loader2, ArrowLeft, Trophy, Users, Percent, Download, Globe, Copy } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { Loader2, ArrowLeft, Trophy, Users, Percent, Download, Globe, Copy, EyeOff, Award, ThumbsUp, ThumbsDown, FileDown } from "lucide-react";
 import { motion } from "framer-motion";
 import { DashboardLayout } from "@/components/layout";
 import { useAuth } from "@/hooks/use-auth";
@@ -24,7 +25,7 @@ export default function ResultsPage() {
   const queryClient = useQueryClient();
 
   const { data: results, isLoading } = useGetElectionResults(id, {
-    query: { refetchInterval: 5000 } // real-time updates every 5s
+    query: { refetchInterval: 5000 }
   });
 
   const publishMutation = useMutation({
@@ -40,6 +41,10 @@ export default function ResultsPage() {
     window.open(`${BASE}/api/elections/${id}/results/export`, "_blank");
   };
 
+  const handleCertificate = () => {
+    window.open(`${BASE}/api/elections/${id}/certificate`, "_blank");
+  };
+
   const canManage = user?.role === "super_admin" || user?.role === "school_admin" || user?.role === "electoral_officer";
 
   if (isLoading || !results) {
@@ -49,6 +54,11 @@ export default function ResultsPage() {
       </DashboardLayout>
     );
   }
+
+  const isReferendum = (results as any).electionType === "referendum";
+  const isRanked = (results as any).votingMethod === "ranked_choice";
+  const hideVoteCounts = (results as any).hideVoteCounts;
+  const referendumQuestion = (results as any).referendumQuestion;
 
   return (
     <DashboardLayout>
@@ -61,15 +71,26 @@ export default function ResultsPage() {
               </Button>
             </Link>
             <div>
-              <h1 className="text-3xl font-display font-bold text-foreground">Live Results</h1>
-              <p className="text-muted-foreground">{results.title} &bull; {results.status}</p>
+              <h1 className="text-3xl font-display font-bold text-foreground">
+                {isReferendum ? "Referendum Results" : isRanked ? "Ranked Choice Results" : "Live Results"}
+              </h1>
+              <p className="text-muted-foreground flex items-center gap-2">
+                {results.title} &bull; {results.status}
+                {isReferendum && <Badge variant="secondary" className="text-[10px]">Referendum</Badge>}
+                {isRanked && <Badge variant="secondary" className="text-[10px]">Ranked Choice (IRV)</Badge>}
+              </p>
             </div>
           </div>
           {canManage && (
-            <div className="flex gap-2">
+            <div className="flex gap-2 flex-wrap">
               <Button variant="outline" onClick={handleExport} className="rounded-xl h-10 px-4 text-sm">
                 <Download className="w-4 h-4 mr-2" /> Export CSV
               </Button>
+              {results.status === "closed" && (
+                <Button variant="outline" onClick={handleCertificate} className="rounded-xl h-10 px-4 text-sm">
+                  <FileDown className="w-4 h-4 mr-2" /> Certificate
+                </Button>
+              )}
               {!results.resultsPublished && results.status === "closed" && (
                 <Button
                   className="rounded-xl h-10 px-4 text-sm shadow-md shadow-primary/20"
@@ -103,12 +124,21 @@ export default function ResultsPage() {
           )}
         </div>
 
+        {hideVoteCounts && (
+          <div className="bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 rounded-2xl p-4 flex items-center gap-3">
+            <EyeOff className="w-5 h-5 text-amber-600 shrink-0" />
+            <p className="text-sm text-amber-700 dark:text-amber-400 font-medium">
+              Live vote counts are hidden during this election. Results will be visible once the election closes.
+            </p>
+          </div>
+        )}
+
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           <Card className="p-6 rounded-2xl border-border/50 bg-gradient-to-br from-primary to-emerald-600 text-white shadow-lg shadow-primary/20">
             <div className="flex justify-between items-start">
               <div>
                 <p className="text-primary-foreground/80 font-medium mb-1">Total Votes Cast</p>
-                <p className="text-4xl font-display font-bold">{results.totalVotes}</p>
+                <p className="text-4xl font-display font-bold">{hideVoteCounts ? "—" : results.totalVotes}</p>
               </div>
               <div className="p-3 bg-white/20 rounded-xl"><Users className="w-6 h-6" /></div>
             </div>
@@ -117,7 +147,7 @@ export default function ResultsPage() {
             <div className="flex justify-between items-start">
               <div>
                 <p className="text-muted-foreground font-medium mb-1">Voter Turnout</p>
-                <p className="text-4xl font-display font-bold text-foreground">{results.turnoutPercentage}%</p>
+                <p className="text-4xl font-display font-bold text-foreground">{hideVoteCounts ? "—" : `${results.turnoutPercentage}%`}</p>
               </div>
               <div className="p-3 bg-primary/10 text-primary rounded-xl"><Percent className="w-6 h-6" /></div>
             </div>
@@ -133,59 +163,218 @@ export default function ResultsPage() {
           </Card>
         </div>
 
-        <div className="space-y-10">
-          {results.positions.map((pos: any) => {
-            const maxVotes = Math.max(...pos.candidates.map((c: any) => c.voteCount), 1);
-            return (
-              <div key={pos.position} className="space-y-4">
-                <h3 className="text-2xl font-bold border-b border-border pb-2">{pos.position}</h3>
-                <div className="grid grid-cols-1 gap-4">
-                  {pos.candidates.sort((a: any, b: any) => b.voteCount - a.voteCount).map((candidate: any, i: number) => {
-                    const isWinner = i === 0 && candidate.voteCount > 0 && results.status === 'closed';
-                    const isLeading = i === 0 && candidate.voteCount > 0 && results.status === 'active';
-                    return (
-                      <div key={candidate.candidateId} className="bg-card p-5 rounded-2xl border border-border/50 shadow-sm relative overflow-hidden">
-                        <div className="flex justify-between items-center mb-3 relative z-10">
-                          <div className="flex items-center gap-3">
-                            {candidate.photoUrl ? (
-                              <img src={candidate.photoUrl} className="w-10 h-10 rounded-full object-cover" alt={candidate.name} />
-                            ) : (
-                              <div className="w-10 h-10 rounded-full bg-muted flex items-center justify-center font-bold text-foreground">
-                                {candidate.name.charAt(0)}
-                              </div>
-                            )}
-                            <div>
-                              <h4 className="font-bold text-lg flex items-center gap-2">
-                                {candidate.name}
-                                {isWinner && <Trophy className="w-4 h-4 text-amber-500" />}
-                                {isLeading && <span className="text-xs bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-md font-medium">Leading</span>}
-                              </h4>
-                              {candidate.department && <p className="text-sm text-muted-foreground">{candidate.department}</p>}
+        {isReferendum ? (
+          <ReferendumResults
+            question={referendumQuestion || results.title}
+            positions={results.positions}
+            totalVotes={results.totalVotes}
+            status={results.status}
+            hideVoteCounts={hideVoteCounts}
+          />
+        ) : (
+          <div className="space-y-10">
+            {results.positions.map((pos: any) => {
+              const maxVotes = hideVoteCounts ? 1 : Math.max(...pos.candidates.map((c: any) => c.voteCount), 1);
+              return (
+                <div key={pos.position} className="space-y-4">
+                  <div className="flex items-center gap-2 border-b border-border pb-2">
+                    <h3 className="text-2xl font-bold">{pos.position}</h3>
+                    {isRanked && (
+                      <Badge variant="secondary" className="text-[10px]">
+                        IRV — {pos.irvRounds?.length || 1} round{pos.irvRounds?.length !== 1 ? "s" : ""}
+                      </Badge>
+                    )}
+                  </div>
+
+                  {isRanked && pos.irvRounds && pos.irvRounds.length > 1 && !hideVoteCounts && (
+                    <details className="bg-muted/30 rounded-xl p-4 text-sm">
+                      <summary className="cursor-pointer font-medium text-foreground flex items-center gap-2">
+                        <Award className="w-4 h-4 text-primary" /> View IRV Round Details
+                      </summary>
+                      <div className="mt-3 space-y-3">
+                        {pos.irvRounds.map((round: any[], roundIdx: number) => (
+                          <div key={roundIdx}>
+                            <p className="text-xs font-semibold text-muted-foreground uppercase mb-1">Round {roundIdx + 1}</p>
+                            <div className="flex flex-wrap gap-2">
+                              {round.map((r: any) => {
+                                const cand = pos.candidates.find((c: any) => c.candidateId === r.candidateId);
+                                return (
+                                  <span key={r.candidateId} className="text-xs bg-card border border-border rounded-lg px-2 py-1">
+                                    {cand?.name || r.candidateId}: <strong>{r.votes}</strong>
+                                  </span>
+                                );
+                              })}
                             </div>
                           </div>
-                          <div className="text-right">
-                            <p className="font-display font-bold text-2xl">{candidate.voteCount}</p>
-                            <p className="text-sm text-muted-foreground">{candidate.percentage?.toFixed(1)}%</p>
-                          </div>
-                        </div>
-                        <div className="w-full bg-muted rounded-full h-3 overflow-hidden relative z-10">
-                          <motion.div
-                            initial={{ width: 0 }}
-                            animate={{ width: `${(candidate.voteCount / maxVotes) * 100}%` }}
-                            transition={{ duration: 1, ease: "easeOut" }}
-                            className={`h-full rounded-full ${i === 0 ? 'bg-primary' : 'bg-primary/40'}`}
-                          />
-                        </div>
-                        {isWinner && <div className="absolute inset-0 bg-amber-500/5 z-0 pointer-events-none" />}
+                        ))}
                       </div>
-                    );
-                  })}
+                    </details>
+                  )}
+
+                  <div className="grid grid-cols-1 gap-4">
+                    {pos.candidates.sort((a: any, b: any) => b.voteCount - a.voteCount).map((candidate: any, i: number) => {
+                      const isWinner = (i === 0 && candidate.voteCount > 0 && results.status === 'closed') || candidate.isWinner;
+                      const isLeading = i === 0 && candidate.voteCount > 0 && results.status === 'active' && !hideVoteCounts;
+                      return (
+                        <div key={candidate.candidateId} className="bg-card p-5 rounded-2xl border border-border/50 shadow-sm relative overflow-hidden">
+                          <div className="flex justify-between items-center mb-3 relative z-10">
+                            <div className="flex items-center gap-3">
+                              {candidate.photoUrl ? (
+                                <img src={candidate.photoUrl} className="w-10 h-10 rounded-full object-cover" alt={candidate.name} />
+                              ) : (
+                                <div className="w-10 h-10 rounded-full bg-muted flex items-center justify-center font-bold text-foreground">
+                                  {candidate.name.charAt(0)}
+                                </div>
+                              )}
+                              <div>
+                                <h4 className="font-bold text-lg flex items-center gap-2">
+                                  {candidate.name}
+                                  {isWinner && <Trophy className="w-4 h-4 text-amber-500" />}
+                                  {isLeading && <span className="text-xs bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-md font-medium">Leading</span>}
+                                </h4>
+                                {candidate.department && <p className="text-sm text-muted-foreground">{candidate.department}</p>}
+                                {isRanked && !hideVoteCounts && candidate.firstChoiceVotes !== undefined && (
+                                  <p className="text-xs text-muted-foreground">{candidate.firstChoiceVotes} first-choice votes</p>
+                                )}
+                              </div>
+                            </div>
+                            <div className="text-right">
+                              <p className="font-display font-bold text-2xl">{hideVoteCounts ? "—" : candidate.voteCount}</p>
+                              <p className="text-sm text-muted-foreground">{hideVoteCounts ? "" : `${candidate.percentage?.toFixed(1)}%`}</p>
+                            </div>
+                          </div>
+                          {!hideVoteCounts && (
+                            <div className="w-full bg-muted rounded-full h-3 overflow-hidden relative z-10">
+                              <motion.div
+                                initial={{ width: 0 }}
+                                animate={{ width: `${(candidate.voteCount / maxVotes) * 100}%` }}
+                                transition={{ duration: 1, ease: "easeOut" }}
+                                className={`h-full rounded-full ${i === 0 ? 'bg-primary' : 'bg-primary/40'}`}
+                              />
+                            </div>
+                          )}
+                          {isWinner && <div className="absolute inset-0 bg-amber-500/5 z-0 pointer-events-none" />}
+                        </div>
+                      );
+                    })}
+                  </div>
                 </div>
-              </div>
-            );
-          })}
-        </div>
+              );
+            })}
+          </div>
+        )}
       </div>
     </DashboardLayout>
+  );
+}
+
+function ReferendumResults({ question, positions, totalVotes, status, hideVoteCounts }: {
+  question: string;
+  positions: any[];
+  totalVotes: number;
+  status: string;
+  hideVoteCounts: boolean;
+}) {
+  const positionData = positions[0];
+  if (!positionData) return null;
+
+  const yesCandidate = positionData.candidates.find((c: any) => c.name === "Yes");
+  const noCandidate = positionData.candidates.find((c: any) => c.name === "No");
+  const yesVotes = hideVoteCounts ? 0 : (yesCandidate?.voteCount || 0);
+  const noVotes = hideVoteCounts ? 0 : (noCandidate?.voteCount || 0);
+  const total = yesVotes + noVotes;
+  const yesPct = total > 0 ? Math.round((yesVotes / total) * 100) : 50;
+  const noPct = total > 0 ? Math.round((noVotes / total) * 100) : 50;
+
+  const passed = yesVotes > noVotes;
+  const isTie = yesVotes === noVotes && total > 0;
+  const isClosed = status === "closed";
+
+  return (
+    <div className="space-y-6">
+      <Card className="p-6 rounded-2xl border border-border/50 shadow-sm">
+        <div className="text-center mb-6">
+          <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground mb-2">Referendum Question</p>
+          <h2 className="text-2xl font-display font-bold text-foreground">{question}</h2>
+        </div>
+
+        {isClosed && !hideVoteCounts && (
+          <div className={`text-center mb-6 py-4 rounded-xl border ${
+            isTie ? "bg-amber-50 border-amber-200 dark:bg-amber-950/30 dark:border-amber-800" :
+            passed ? "bg-emerald-50 border-emerald-200 dark:bg-emerald-950/30 dark:border-emerald-800" :
+            "bg-red-50 border-red-200 dark:bg-red-950/30 dark:border-red-800"
+          }`}>
+            <p className={`text-3xl font-display font-bold ${
+              isTie ? "text-amber-600" : passed ? "text-emerald-600 dark:text-emerald-400" : "text-red-600 dark:text-red-400"
+            }`}>
+              {isTie ? "TIE" : passed ? "PASSED ✓" : "REJECTED ✗"}
+            </p>
+            <p className="text-sm text-muted-foreground mt-1">
+              {isTie ? "Equal votes — no majority reached" : passed ? "Majority voted Yes" : "Majority voted No"}
+            </p>
+          </div>
+        )}
+
+        {!hideVoteCounts && total > 0 && (
+          <div className="mb-6">
+            <div className="flex justify-between text-sm font-medium mb-2">
+              <span className="text-emerald-600">{yesPct}% Yes</span>
+              <span className="text-red-500">{noPct}% No</span>
+            </div>
+            <div className="w-full h-8 rounded-full overflow-hidden flex">
+              <motion.div
+                initial={{ width: 0 }}
+                animate={{ width: `${yesPct}%` }}
+                transition={{ duration: 1.2, ease: "easeOut" }}
+                className="bg-emerald-500 h-full flex items-center justify-center text-white text-xs font-bold"
+              >
+                {yesPct > 15 ? `${yesPct}%` : ""}
+              </motion.div>
+              <motion.div
+                initial={{ width: 0 }}
+                animate={{ width: `${noPct}%` }}
+                transition={{ duration: 1.2, ease: "easeOut", delay: 0.1 }}
+                className="bg-red-500 h-full flex items-center justify-center text-white text-xs font-bold"
+              >
+                {noPct > 15 ? `${noPct}%` : ""}
+              </motion.div>
+            </div>
+          </div>
+        )}
+
+        <div className="grid grid-cols-2 gap-4">
+          <Card className={`p-5 rounded-xl text-center border-2 ${!hideVoteCounts && passed && isClosed ? "border-emerald-300 bg-emerald-50 dark:bg-emerald-950/20" : "border-border/50"}`}>
+            <div className="w-12 h-12 rounded-full bg-emerald-100 dark:bg-emerald-900/40 flex items-center justify-center mx-auto mb-3">
+              <ThumbsUp className="w-6 h-6 text-emerald-600" />
+            </div>
+            <p className="text-3xl font-display font-bold text-emerald-600 dark:text-emerald-400">
+              {hideVoteCounts ? "—" : yesVotes}
+            </p>
+            <p className="text-sm text-muted-foreground mt-1">Yes votes</p>
+            {!hideVoteCounts && total > 0 && (
+              <p className="text-xs text-emerald-600 font-medium mt-1">{yesPct}%</p>
+            )}
+            {!hideVoteCounts && isClosed && passed && !isTie && (
+              <Badge className="mt-2 bg-emerald-100 text-emerald-700 border-0">Winner</Badge>
+            )}
+          </Card>
+          <Card className={`p-5 rounded-xl text-center border-2 ${!hideVoteCounts && !passed && isClosed && !isTie ? "border-red-300 bg-red-50 dark:bg-red-950/20" : "border-border/50"}`}>
+            <div className="w-12 h-12 rounded-full bg-red-100 dark:bg-red-900/40 flex items-center justify-center mx-auto mb-3">
+              <ThumbsDown className="w-6 h-6 text-red-500" />
+            </div>
+            <p className="text-3xl font-display font-bold text-red-500 dark:text-red-400">
+              {hideVoteCounts ? "—" : noVotes}
+            </p>
+            <p className="text-sm text-muted-foreground mt-1">No votes</p>
+            {!hideVoteCounts && total > 0 && (
+              <p className="text-xs text-red-500 font-medium mt-1">{noPct}%</p>
+            )}
+            {!hideVoteCounts && isClosed && !passed && !isTie && (
+              <Badge className="mt-2 bg-red-100 text-red-700 border-0">Winner</Badge>
+            )}
+          </Card>
+        </div>
+      </Card>
+    </div>
   );
 }

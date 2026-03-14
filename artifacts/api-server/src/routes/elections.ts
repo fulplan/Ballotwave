@@ -15,6 +15,10 @@ const createElectionSchema = z.object({
   schoolId: z.string(),
   departmentId: z.string().optional(),
   votingType: z.enum(["web", "ussd", "both"]).default("web"),
+  electionType: z.enum(["standard", "referendum"]).default("standard"),
+  votingMethod: z.enum(["fptp", "ranked_choice"]).default("fptp"),
+  referendumQuestion: z.string().optional(),
+  showLiveCount: z.boolean().default(true),
   startDate: z.string().transform(v => new Date(v)),
   endDate: z.string().transform(v => new Date(v)),
   requiresPayment: z.boolean().default(false),
@@ -30,6 +34,10 @@ const updateElectionSchema = z.object({
   title: z.string().optional(),
   description: z.string().optional(),
   status: z.enum(["draft", "active", "closed", "cancelled"]).optional(),
+  electionType: z.enum(["standard", "referendum"]).optional(),
+  votingMethod: z.enum(["fptp", "ranked_choice"]).optional(),
+  referendumQuestion: z.string().optional().nullable(),
+  showLiveCount: z.boolean().optional(),
   startDate: z.string().transform(v => new Date(v)).optional(),
   endDate: z.string().transform(v => new Date(v)).optional(),
   requiresPayment: z.boolean().optional(),
@@ -50,6 +58,11 @@ function electionFields() {
     departmentId: electionsTable.departmentId,
     status: electionsTable.status,
     votingType: electionsTable.votingType,
+    electionType: electionsTable.electionType,
+    votingMethod: electionsTable.votingMethod,
+    referendumQuestion: electionsTable.referendumQuestion,
+    showLiveCount: electionsTable.showLiveCount,
+    pdfCertUrl: electionsTable.pdfCertUrl,
     startDate: electionsTable.startDate,
     endDate: electionsTable.endDate,
     requiresPayment: electionsTable.requiresPayment,
@@ -124,6 +137,17 @@ router.post("/", requireAuth, async (req, res) => {
       slug,
       createdById: user.id,
     }).returning();
+
+    if (election.electionType === "referendum") {
+      const question = election.referendumQuestion || election.title;
+      await db.insert(candidatesTable).values([
+        { electionId: election.id, name: "Yes", position: question, isApproved: true },
+        { electionId: election.id, name: "No", position: question, isApproved: true },
+      ]);
+      await db.update(electionsTable)
+        .set({ totalCandidates: 2 })
+        .where(eq(electionsTable.id, election.id));
+    }
 
     await logAudit({
       ...auditFromReq(req),
@@ -306,13 +330,54 @@ router.post("/:electionId/publish-results", requireAuth, async (req, res) => {
   res.json({ ...election, schoolName: null });
 });
 
+function runIRV(candidateIds: string[], ballots: Array<{ voterId: string; candidateId: string; rankOrder: number }[]>): { winner: string | null; rounds: Array<{ candidateId: string; votes: number }[]> } {
+  let remaining = new Set(candidateIds);
+  const rounds: Array<{ candidateId: string; votes: number }[]> = [];
+
+  while (true) {
+    const tally: Record<string, number> = {};
+    for (const id of remaining) tally[id] = 0;
+
+    for (const ballot of ballots) {
+      const sorted = ballot.filter(v => remaining.has(v.candidateId)).sort((a, b) => a.rankOrder - b.rankOrder);
+      if (sorted.length > 0) {
+        tally[sorted[0].candidateId] = (tally[sorted[0].candidateId] || 0) + 1;
+      }
+    }
+
+    const totalVotes = Object.values(tally).reduce((a, b) => a + b, 0);
+    const roundResult = Object.entries(tally).map(([candidateId, votes]) => ({ candidateId, votes }));
+    rounds.push(roundResult.sort((a, b) => b.votes - a.votes));
+
+    const winner = roundResult.find(c => c.votes > totalVotes / 2);
+    if (winner) return { winner: winner.candidateId, rounds };
+
+    if (remaining.size <= 2) {
+      const top = roundResult.sort((a, b) => b.votes - a.votes)[0];
+      return { winner: top?.candidateId || null, rounds };
+    }
+
+    const minVotes = Math.min(...roundResult.map(c => c.votes));
+    const eliminated = roundResult.filter(c => c.votes === minVotes)[0]?.candidateId;
+    if (!eliminated) break;
+    remaining.delete(eliminated);
+  }
+
+  return { winner: null, rounds };
+}
+
 router.get("/:electionId/results", async (req, res) => {
+  const user = (req as any).user;
+  const isAdmin = user && ["super_admin", "school_admin", "electoral_officer"].includes(user.role);
+
   const [election] = await db.select().from(electionsTable)
     .where(eq(electionsTable.id, req.params.electionId)).limit(1);
   if (!election) {
     res.status(404).json({ error: "Not Found", message: "Election not found" });
     return;
   }
+
+  const hideVoteCounts = !isAdmin && election.status === "active" && !election.showLiveCount;
 
   const candidates = await db.select().from(candidatesTable)
     .where(eq(candidatesTable.electionId, req.params.electionId));
@@ -321,22 +386,77 @@ router.get("/:electionId/results", async (req, res) => {
   const totalVotes = election.totalVotes;
   const registeredVoters = election.registeredVoters || 0;
 
-  const positionResults = positions.map(position => {
-    const positionCandidates = candidates
-      .filter((c: any) => c.position === position)
-      .map((c: any) => ({
-        candidateId: c.id,
-        name: c.name,
-        photoUrl: c.photoUrl,
-        department: c.department,
-        voteCount: c.voteCount,
-        percentage: totalVotes > 0 ? Math.round((c.voteCount / totalVotes) * 100 * 10) / 10 : 0,
-      }))
-      .sort((a, b) => b.voteCount - a.voteCount);
+  let positionResults: any[] = [];
 
-    const winner = positionCandidates[0] || null;
-    return { position, candidates: positionCandidates, winner };
-  });
+  if (election.votingMethod === "ranked_choice") {
+    const allVotes = await db.select({
+      voterId: votesTable.voterId,
+      candidateId: votesTable.candidateId,
+      position: votesTable.position,
+      rankOrder: votesTable.rankOrder,
+    }).from(votesTable).where(eq(votesTable.electionId, req.params.electionId));
+
+    positionResults = positions.map(position => {
+      const posCandidates = candidates.filter((c: any) => c.position === position);
+      const posVotes = allVotes.filter(v => v.position === position);
+
+      const voterBallots: Record<string, Array<{ voterId: string; candidateId: string; rankOrder: number }>> = {};
+      for (const v of posVotes) {
+        if (!voterBallots[v.voterId]) voterBallots[v.voterId] = [];
+        voterBallots[v.voterId].push({ voterId: v.voterId, candidateId: v.candidateId, rankOrder: v.rankOrder ?? 1 });
+      }
+      const ballots = Object.values(voterBallots);
+
+      const { winner, rounds } = runIRV(posCandidates.map(c => c.id), ballots);
+      const finalRound = rounds[rounds.length - 1] || [];
+
+      const candidateResults = posCandidates.map((c: any) => {
+        const roundData = finalRound.find(r => r.candidateId === c.id);
+        const votes = hideVoteCounts ? 0 : (roundData?.votes ?? 0);
+        const firstChoiceVotes = hideVoteCounts ? 0 : posVotes.filter(v => v.candidateId === c.id && (v.rankOrder ?? 1) === 1).length;
+        return {
+          candidateId: c.id,
+          name: c.name,
+          photoUrl: c.photoUrl,
+          department: c.department,
+          voteCount: votes,
+          firstChoiceVotes,
+          percentage: !hideVoteCounts && totalVotes > 0 ? Math.round((votes / totalVotes) * 100 * 10) / 10 : 0,
+          isWinner: c.id === winner,
+        };
+      }).sort((a: any, b: any) => b.voteCount - a.voteCount);
+
+      return {
+        position,
+        candidates: candidateResults,
+        winner: candidateResults.find((c: any) => c.isWinner) || null,
+        irvRounds: hideVoteCounts ? [] : rounds,
+        votingMethod: "ranked_choice",
+      };
+    });
+  } else {
+    positionResults = positions.map(position => {
+      const positionCandidates = candidates
+        .filter((c: any) => c.position === position)
+        .map((c: any) => ({
+          candidateId: c.id,
+          name: c.name,
+          photoUrl: c.photoUrl,
+          department: c.department,
+          voteCount: hideVoteCounts ? 0 : c.voteCount,
+          percentage: !hideVoteCounts && totalVotes > 0 ? Math.round((c.voteCount / totalVotes) * 100 * 10) / 10 : 0,
+        }))
+        .sort((a: any, b: any) => b.voteCount - a.voteCount);
+
+      const winner = positionCandidates[0] || null;
+      return {
+        position,
+        candidates: positionCandidates,
+        winner,
+        votingMethod: "fptp",
+      };
+    });
+  }
 
   const turnoutPercentage = registeredVoters > 0 ? Math.round((totalVotes / registeredVoters) * 100) : 0;
 
@@ -346,6 +466,12 @@ router.get("/:electionId/results", async (req, res) => {
     slug: election.slug,
     status: election.status,
     resultsPublished: election.resultsPublished,
+    electionType: election.electionType,
+    votingMethod: election.votingMethod,
+    referendumQuestion: election.referendumQuestion,
+    showLiveCount: election.showLiveCount,
+    hideVoteCounts,
+    pdfCertUrl: election.pdfCertUrl,
     totalVotes,
     registeredVoters,
     turnoutPercentage,
@@ -399,6 +525,9 @@ router.get("/public/:slug/results", async (req, res) => {
     description: election.description,
     status: election.status,
     resultsPublished: true,
+    electionType: election.electionType,
+    votingMethod: election.votingMethod,
+    referendumQuestion: election.referendumQuestion,
     totalVotes,
     registeredVoters,
     turnoutPercentage,
@@ -435,6 +564,126 @@ router.get("/:electionId/results/export", requireAuth, async (req, res) => {
   res.setHeader("Content-Type", "text/csv");
   res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
   res.send(csv);
+});
+
+router.get("/:electionId/certificate", requireAuth, async (req, res) => {
+  const user = (req as any).user;
+  const [election] = await db.select().from(electionsTable)
+    .where(eq(electionsTable.id, req.params.electionId)).limit(1);
+
+  if (!election) {
+    res.status(404).json({ error: "Not Found", message: "Election not found" });
+    return;
+  }
+
+  if (election.status !== "closed") {
+    res.status(400).json({ error: "Bad Request", message: "Certificate is only available for closed elections" });
+    return;
+  }
+
+  const candidates = await db.select().from(candidatesTable)
+    .where(eq(candidatesTable.electionId, req.params.electionId));
+
+  const positions = [...new Set(candidates.map((c: any) => c.position))];
+  const positionWinners = positions.map(position => {
+    const posCandidates = candidates
+      .filter((c: any) => c.position === position)
+      .sort((a: any, b: any) => b.voteCount - a.voteCount);
+    return { position, winner: posCandidates[0] };
+  }).filter(p => p.winner);
+
+  const now = new Date();
+  const dateStr = now.toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" });
+
+  const isReferendum = election.electionType === "referendum";
+  const question = election.referendumQuestion || election.title;
+
+  let resultLines = "";
+  if (isReferendum) {
+    const yesCandidate = candidates.find((c: any) => c.name === "Yes");
+    const noCandidate = candidates.find((c: any) => c.name === "No");
+    const totalVotes = election.totalVotes || 0;
+    const yesVotes = yesCandidate?.voteCount || 0;
+    const noVotes = noCandidate?.voteCount || 0;
+    const yesPct = totalVotes > 0 ? ((yesVotes / totalVotes) * 100).toFixed(1) : "0.0";
+    const noPct = totalVotes > 0 ? ((noVotes / totalVotes) * 100).toFixed(1) : "0.0";
+    const outcome = yesVotes > noVotes ? "PASSED" : yesVotes < noVotes ? "REJECTED" : "TIE";
+    resultLines = `
+    <tr style="background:#f0fdf4"><td style="padding:14px;font-size:18px;font-weight:700">Referendum Result</td><td style="padding:14px;font-size:18px;font-weight:700;color:${outcome === "PASSED" ? "#16a34a" : "#dc2626"}">${outcome}</td><td style="padding:14px">${totalVotes} total votes</td></tr>
+    <tr><td style="padding:10px 14px;color:#555">Yes</td><td style="padding:10px 14px;font-weight:600">${yesVotes} votes (${yesPct}%)</td><td></td></tr>
+    <tr><td style="padding:10px 14px;color:#555">No</td><td style="padding:10px 14px;font-weight:600">${noVotes} votes (${noPct}%)</td><td></td></tr>`;
+  } else {
+    resultLines = positionWinners.map(p => `
+    <tr style="background:#f0fdf4"><td style="padding:14px;font-weight:600;color:#555">${p.position}</td><td style="padding:14px;font-size:17px;font-weight:700">${p.winner.name}</td><td style="padding:14px;color:#888">${p.winner.voteCount} votes</td></tr>`).join("");
+  }
+
+  const html = `<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="UTF-8"><title>Election Certificate - ${election.title}</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700&family=Inter:wght@400;500;600&display=swap');
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: 'Inter', sans-serif; background: #f8fafc; display: flex; justify-content: center; align-items: center; min-height: 100vh; padding: 40px 20px; }
+  .cert { background: white; max-width: 800px; width: 100%; border: 8px solid #1d4ed8; border-radius: 16px; padding: 60px; box-shadow: 0 20px 60px rgba(0,0,0,0.15); position: relative; }
+  .cert::before { content: ""; position: absolute; inset: 12px; border: 2px solid #93c5fd; border-radius: 8px; pointer-events: none; }
+  .header { text-align: center; margin-bottom: 40px; }
+  .logo { font-size: 13px; font-weight: 700; letter-spacing: 4px; text-transform: uppercase; color: #1d4ed8; margin-bottom: 20px; }
+  h1 { font-family: 'Playfair Display', serif; font-size: 36px; color: #0f172a; margin-bottom: 6px; }
+  .subtitle { font-size: 14px; color: #64748b; letter-spacing: 1px; text-transform: uppercase; }
+  .divider { border: none; border-top: 2px solid #e2e8f0; margin: 30px 0; }
+  .election-title { font-family: 'Playfair Display', serif; font-size: 26px; color: #1e293b; text-align: center; margin-bottom: 8px; }
+  .meta { display: flex; justify-content: center; gap: 24px; font-size: 13px; color: #64748b; margin-bottom: 8px; flex-wrap: wrap; }
+  .question-box { background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 10px; padding: 14px 20px; text-align: center; margin: 16px 0 24px; }
+  .question-box p { font-size: 13px; color: #64748b; margin-bottom: 4px; }
+  .question-box h3 { font-size: 18px; font-weight: 600; color: #1e3a8a; }
+  table { width: 100%; border-collapse: collapse; margin: 24px 0; }
+  th { background: #1d4ed8; color: white; padding: 12px 14px; text-align: left; font-size: 13px; letter-spacing: 0.5px; }
+  tr:nth-child(even) { background: #f8fafc; }
+  .stats { display: grid; grid-template-columns: repeat(3,1fr); gap: 16px; margin-top: 24px; }
+  .stat { background: #f1f5f9; border-radius: 10px; padding: 14px; text-align: center; }
+  .stat-val { font-size: 24px; font-weight: 700; color: #1d4ed8; }
+  .stat-label { font-size: 12px; color: #64748b; margin-top: 2px; }
+  .footer { text-align: center; margin-top: 40px; font-size: 12px; color: #94a3b8; }
+  .seal { display: inline-block; width: 80px; height: 80px; border-radius: 50%; background: linear-gradient(135deg,#1d4ed8,#3b82f6); color: white; display: flex; align-items: center; justify-content: center; margin: 0 auto 12px; font-size: 32px; }
+</style>
+</head>
+<body>
+<div class="cert">
+  <div class="header">
+    <div class="logo">BallotWave — Official Certificate</div>
+    <h1>Certificate of Election Results</h1>
+    <div class="subtitle">Official Record &bull; Tamper-Proof</div>
+  </div>
+  <hr class="divider">
+  <div class="election-title">${election.title}</div>
+  ${isReferendum ? `<div class="question-box"><p>Referendum Question</p><h3>${question}</h3></div>` : ""}
+  <div class="meta">
+    <span>📅 Closed: ${dateStr}</span>
+    <span>🗳️ Total Votes: ${election.totalVotes}</span>
+    <span>👥 Registered Voters: ${election.registeredVoters || 0}</span>
+  </div>
+  <table>
+    <thead><tr><th>${isReferendum ? "Category" : "Position"}</th><th>${isReferendum ? "Option" : "Elected Candidate"}</th><th>Votes</th></tr></thead>
+    <tbody>${resultLines}</tbody>
+  </table>
+  <div class="stats">
+    <div class="stat"><div class="stat-val">${election.totalVotes}</div><div class="stat-label">Votes Cast</div></div>
+    <div class="stat"><div class="stat-val">${election.registeredVoters > 0 ? Math.round((election.totalVotes / election.registeredVoters) * 100) : 0}%</div><div class="stat-label">Voter Turnout</div></div>
+    <div class="stat"><div class="stat-val">${election.registeredVoters || 0}</div><div class="stat-label">Registered Voters</div></div>
+  </div>
+  <hr class="divider">
+  <div class="footer">
+    <div class="seal">✓</div>
+    <p>This certificate was generated by BallotWave on ${dateStr}</p>
+    <p style="margin-top:4px">Election ID: ${election.id} &bull; Status: Closed &bull; Results: ${election.resultsPublished ? "Published" : "Pending Publication"}</p>
+  </div>
+</div>
+<script>window.onload = () => window.print();</script>
+</body>
+</html>`;
+
+  res.setHeader("Content-Type", "text/html; charset=utf-8");
+  res.send(html);
 });
 
 router.get("/:electionId/verify/:receiptCode", async (req, res) => {
@@ -474,6 +723,7 @@ const castVoteSchema = z.object({
   votes: z.array(z.object({
     position: z.string(),
     candidateId: z.string(),
+    rankOrder: z.number().int().optional(),
   })).min(1),
   paymentReference: z.string().optional(),
 });
@@ -516,6 +766,8 @@ router.post("/:electionId/vote", requireAuth, async (req, res) => {
       paymentReference: data.paymentReference,
     });
 
+    const isRanked = election.votingMethod === "ranked_choice";
+
     for (const vote of data.votes) {
       await db.insert(votesTable).values({
         electionId: req.params.electionId,
@@ -526,11 +778,14 @@ router.post("/:electionId/vote", requireAuth, async (req, res) => {
         paymentReference: data.paymentReference,
         votingMethod: "web",
         ipAddress: req.ip,
+        rankOrder: vote.rankOrder ?? null,
       });
 
-      await db.update(candidatesTable)
-        .set({ voteCount: sql`${candidatesTable.voteCount} + 1`, updatedAt: new Date() })
-        .where(eq(candidatesTable.id, vote.candidateId));
+      if (!isRanked || (vote.rankOrder ?? 1) === 1) {
+        await db.update(candidatesTable)
+          .set({ voteCount: sql`${candidatesTable.voteCount} + 1`, updatedAt: new Date() })
+          .where(eq(candidatesTable.id, vote.candidateId));
+      }
     }
 
     await db.update(electionsTable)

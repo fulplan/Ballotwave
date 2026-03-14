@@ -48,10 +48,10 @@ Tables:
 - `users` — all roles including new `electoral_officer` and `observer`, with `departmentId`, `yearLevel`, `isActive`, `resetToken`, `resetTokenExpiry`
 - `schools` — multi-tenant institutions with `subscriptionPlan` (free/basic/pro/enterprise), USSD config (ussdShortCode, ussdSchoolCode, ussdLanguage, ussdEnabled)
 - `departments` — faculty/department groupings per school
-- `elections` — full lifecycle, with `slug`, `registeredVoters`, `resultsPublished`, `nominationsOpen`
+- `elections` — full lifecycle, with `slug`, `registeredVoters`, `resultsPublished`, `nominationsOpen`, `electionType` (standard/referendum), `votingMethod` (fptp/ranked_choice), `referendumQuestion`, `showLiveCount`, `pdfCertUrl`
 - `candidates` — per election, with `isApproved`, `voteCount`, `photoUrl` (base64)
 - `candidate_applications` — self-nomination applications with status workflow (pending/approved/rejected/revision_requested), review notes, reviewer tracking
-- `votes` — vote records with `receiptCode`, `channel` (web/ussd)
+- `votes` — vote records with `receiptCode`, `channel` (web/ussd), `rankOrder` (for ranked-choice)
 - `voter_receipts` — anonymous vote verification receipts
 - `payments` — Paystack payment tracking
 - `platform_settings` — key-value config
@@ -125,6 +125,13 @@ Tables:
 - **Election scheduling**: DB columns `eligibleDepartments` (JSON) + `eligibleYearLevels` (JSON) added to elections table; `app.ts` runs a 60-second `setInterval` that auto-activates Draft elections when `startDate <= now` and auto-closes Active elections when `endDate <= now`, each logged to audit trail
 - **Voter eligibility filtering**: Elections form has department multi-select checkboxes (from school departments) + Year Level 1–6 checkboxes; backend enforces eligibility in GET /elections (voter-only filter) and POST /vote (403 if ineligible); "Scheduled" amber badge on draft elections with future startDate
 - **Voter dashboard upcoming elections**: Voter home shows "Upcoming Elections" section for draft elections with future startDate; each card shows a live per-second countdown timer
+- **Advanced election types**: Referendum elections (Yes/No ballot with referendum question display); Ranked Choice / IRV voting (voters rank candidates with arrow buttons, backend runs Instant Runoff Voting algorithm through rounds until majority winner); standard FPTP elections unchanged
+- **Live count visibility control**: `showLiveCount` flag per election — when disabled, vote counts are hidden from non-admin users during active elections, showing a banner instead; admins always see counts
+- **Result certificates**: Closed elections generate a printable HTML certificate at `GET /api/elections/:id/certificate`; certificate download button shown on results page and election detail header
+- **Referendum UI**: `ReferendumResults` shows animated Yes/No bars with pass/fail verdict; referendum ballot shows large Yes/No choice cards with question prominently displayed
+- **IRV round display**: Results page shows collapsible IRV elimination round details (who was eliminated, vote transfers) alongside final winner
+- **Election type/voting method badges**: Election cards in the list show "Referendum" (violet) and "IRV" (amber) badges for quick identification
+- **Advanced settings section in creation form**: Election creation dialog has a dashed-border "Advanced Election Settings" section with Election Type selector, Voting Method selector (disabled for referendums), optional Referendum Question textarea, and Hide Live Count toggle
 
 ## API Routes
 

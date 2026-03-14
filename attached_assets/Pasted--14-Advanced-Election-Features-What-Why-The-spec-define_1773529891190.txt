@@ -1,0 +1,37 @@
+#14 - Advanced Election Features
+What & Why
+The spec defines three election types (Single-position, Multi-position, Referendum) and three voting methods (FPTP, Ranked Choice, Two-Round Runoff). It also requires a live count toggle (hide counts during voting), a PDF results certificate auto-generated at close, and an Electoral Officer live vote monitor. Currently only FPTP multi-position elections exist with no advanced types or methods.
+
+Done looks like
+Election creation form has an "Election Type" field: Single-position, Multi-position, or Referendum (Yes/No)
+Referendum elections show only two options (Yes / No) for a single question, with a customisable question text field
+Election creation form has a "Voting Method" field: First Past The Post (default), Ranked Choice (voters drag-and-drop their preference order), Two-Round Runoff (top 2 candidates in first round proceed to automatic runoff if no majority)
+A "Show live vote counts to voters during voting" toggle is available on the election form; when off, voters do not see any vote counts until the election closes
+At election close (manual or auto), a PDF results certificate is auto-generated and stored. It shows: school logo, election title, date range, position results with winner names, vote counts, turnout percentage, and a unique certificate number. It is downloadable from the results page.
+Electoral Officers see a "Live Monitor" view on the election detail page (a tab) that shows real-time vote counts updating every 10 seconds (regardless of the voter-facing toggle) — for monitoring only, not published to voters
+Ranked choice vote storage: votes table stores a JSON array of ranked candidate IDs per position
+Instant Runoff Voting (IRV) calculation is done on-the-fly at results retrieval time from the ranked vote records
+Two-Round Runoff: if enabled and no candidate wins >50% in round 1, the system automatically creates a "runoff" election (linked to the original) with only the top 2 candidates
+Out of scope
+Proportional representation systems (STV, D'Hondt)
+Blind/secret ballot paper printing
+Blockchain-anchored certificate signing
+Tasks
+DB schema — Add electionType (single/multi/referendum), votingMethod (fptp/ranked/runoff), referendumQuestion (text, nullable), showLiveCount (boolean, default true), pdfCertUrl (text, nullable) columns to elections table. Add rankOrder (integer, nullable) and roundNumber (integer, default 1) to votes table. Push schema.
+Backend: referendum voting logic — In the vote endpoint, if electionType = 'referendum', accept a single YES/NO choice. In the results endpoint, return referendum-specific tallies (yes count, no count, yes %, no %).
+Backend: ranked choice calculation — In the results endpoint, if votingMethod = 'ranked', implement Instant Runoff Voting calculation: iteratively eliminate the last-place candidate and redistribute their votes until one candidate has >50%. Return both round-by-round elimination data and the final winner.
+Backend: live count visibility enforcement — In the public GET /api/elections/public/:slug/results and the voter-facing results (once polls close), check showLiveCount. If false and election is still active, return only turnout stats without per-candidate counts. If the election is closed, always return full results.
+Backend: PDF certificate generation — On election close (manual or auto), use a PDF generation library (pdfkit or puppeteer) to render a results certificate and store it as base64 or a file reference. Add GET /api/elections/:id/certificate to download it. Certificate includes school logo, election metadata, position results, winner names, certificate number.
+Frontend: election form advanced fields — Add election type selector, voting method selector, referendum question input (conditional), and live count toggle to the election creation/edit forms. Show contextual help for each option.
+Frontend: ranked choice ballot UI — In the voting portal, when votingMethod = 'ranked', render a drag-and-drop ranking interface (using @dnd-kit/core) for each position. Show a numbered rank indicator on each candidate card. Validate at least one rank must be assigned.
+Frontend: referendum ballot UI — For referendum elections, show a single large Yes/No card selector with the question prominently displayed. No positions shown.
+Frontend: live monitor tab — Add a "Live Monitor" tab to the election detail page (electoral_officer+ only) showing live vote counts for each position, polling every 10 seconds. Show a bar progress for each candidate. Display total votes and turnout.
+Frontend: PDF certificate download — Add a "Download Certificate (PDF)" button to the results page once the election is closed. Show a "Generating..." state immediately after close while the backend creates the PDF.
+Relevant files
+lib/db/src/schema.ts
+artifacts/api-server/src/routes/elections.ts
+artifacts/api-server/src/index.ts
+artifacts/ballotwave/src/pages/voter/vote.tsx
+artifacts/ballotwave/src/pages/shared/results.tsx
+artifacts/ballotwave/src/pages/dashboard/elections.tsx
+artifacts/ballotwave/src/pages/dashboard/election-detail.tsx

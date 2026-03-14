@@ -1,4 +1,4 @@
-import { pgTable, text, timestamp } from "drizzle-orm/pg-core";
+import { pgTable, text, timestamp, integer } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 import { electionsTable } from "./elections";
@@ -15,6 +15,7 @@ export const votesTable = pgTable("votes", {
   votingMethod: text("voting_method").notNull().default("web"),
   channel: text("channel").notNull().default("web"),
   ipAddress: text("ip_address"),
+  rankOrder: integer("rank_order"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 

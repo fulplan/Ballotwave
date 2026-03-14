@@ -10,7 +10,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
-import { Loader2, Plus, ArrowLeft, PlayCircle, StopCircle, BarChart2, CheckCircle2, XCircle, Flag, Users, Calendar, Vote, Camera, Phone, UserPlus, ClipboardList, ToggleLeft, ToggleRight, MessageSquare, RotateCcw, FileText } from "lucide-react";
+import { Loader2, Plus, ArrowLeft, PlayCircle, StopCircle, BarChart2, CheckCircle2, XCircle, Flag, Users, Calendar, Vote, Camera, Phone, UserPlus, ClipboardList, ToggleLeft, ToggleRight, MessageSquare, RotateCcw, FileText, FileDown, Eye, EyeOff, Settings } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Label } from "@/components/ui/label";
 import { StatusBadge } from "@/components/status-badge";
@@ -353,6 +353,11 @@ export default function ElectionDetail() {
               <BarChart2 className="w-4 h-4 mr-2" /> Live Results
             </Button>
           </Link>
+          {election.status === 'closed' && (
+            <Button variant="outline" className="rounded-xl border-2" onClick={() => window.open(`${BASE}/api/elections/${id}/certificate`, "_blank")}>
+              <FileDown className="w-4 h-4 mr-2" /> Certificate
+            </Button>
+          )}
           {canManage && election.status === 'draft' && (
             <Button onClick={handleStart} disabled={startMutation.isPending} className="rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white shadow-md shadow-emerald-500/20">
               {startMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <><PlayCircle className="w-4 h-4 mr-2" /> Start Election</>}
@@ -416,6 +421,32 @@ export default function ElectionDetail() {
             <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
               <dt className="text-muted-foreground">Voting Type</dt>
               <dd className="capitalize">{election.votingType}</dd>
+              <dt className="text-muted-foreground">Election Type</dt>
+              <dd>
+                <span className={`inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full ${
+                  (election as any).electionType === "referendum"
+                    ? "bg-violet-100 text-violet-700 dark:bg-violet-900/40 dark:text-violet-300"
+                    : "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300"
+                }`}>
+                  {(election as any).electionType === "referendum" ? "Referendum" : "Standard Election"}
+                </span>
+              </dd>
+              <dt className="text-muted-foreground">Voting Method</dt>
+              <dd>
+                <span className={`inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full ${
+                  (election as any).votingMethod === "ranked_choice"
+                    ? "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300"
+                    : "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300"
+                }`}>
+                  {(election as any).votingMethod === "ranked_choice" ? "Ranked Choice (IRV)" : "First-Past-The-Post"}
+                </span>
+              </dd>
+              {(election as any).electionType === "referendum" && (election as any).referendumQuestion && (
+                <>
+                  <dt className="text-muted-foreground">Referendum Question</dt>
+                  <dd className="col-span-1 italic">{(election as any).referendumQuestion}</dd>
+                </>
+              )}
               <dt className="text-muted-foreground">Positions</dt>
               <dd>{positions.length || 0}</dd>
               <dt className="text-muted-foreground">Requires Payment</dt>
@@ -424,8 +455,19 @@ export default function ElectionDetail() {
               <dd>{(election as any).resultsPublished ? "Yes" : "No"}</dd>
               <dt className="text-muted-foreground">Nominations</dt>
               <dd>{nominationsOpen ? "Open" : "Closed"}</dd>
+              <dt className="text-muted-foreground">Live Vote Count</dt>
+              <dd className="flex items-center gap-1">
+                {(election as any).showLiveCount !== false ? (
+                  <span className="flex items-center gap-1 text-emerald-600 text-xs font-medium"><Eye className="w-3 h-3" /> Visible to voters</span>
+                ) : (
+                  <span className="flex items-center gap-1 text-amber-600 text-xs font-medium"><EyeOff className="w-3 h-3" /> Hidden during voting</span>
+                )}
+              </dd>
             </dl>
           </Card>
+          {canManage && (
+            <AdvancedSettingsCard electionId={id} election={election} onUpdated={() => queryClient.invalidateQueries({ queryKey: getGetElectionQueryKey(id) })} />
+          )}
         </TabsContent>
 
         <TabsContent value="candidates" className="space-y-6">
@@ -989,6 +1031,74 @@ export default function ElectionDetail() {
         }}
       />
     </div>
+  );
+}
+
+function AdvancedSettingsCard({ electionId, election, onUpdated }: { electionId: string; election: any; onUpdated: () => void }) {
+  const [saving, setSaving] = useState(false);
+  const showLiveCount = election.showLiveCount !== false;
+
+  const toggleLiveCount = async () => {
+    setSaving(true);
+    try {
+      const res = await fetch(`${BASE}/api/elections/${electionId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ showLiveCount: !showLiveCount }),
+      });
+      if (!res.ok) throw new Error("Failed to update");
+      toast.success(showLiveCount ? "Live count hidden from voters" : "Live count visible to voters");
+      onUpdated();
+    } catch {
+      toast.error("Failed to update settings");
+    }
+    setSaving(false);
+  };
+
+  return (
+    <Card className="mt-4 p-5 rounded-2xl border-border/50 shadow-sm">
+      <div className="flex items-center gap-2 mb-4">
+        <Settings className="w-4 h-4 text-muted-foreground" />
+        <h4 className="font-semibold">Advanced Settings</h4>
+      </div>
+      <div className="space-y-3">
+        <div className="flex items-center justify-between py-2 border-b border-border/30">
+          <div>
+            <p className="text-sm font-medium text-foreground">Live Vote Count Visibility</p>
+            <p className="text-xs text-muted-foreground">When enabled, voters can see live vote counts during the election</p>
+          </div>
+          <button
+            onClick={toggleLiveCount}
+            disabled={saving}
+            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ${showLiveCount ? 'bg-primary' : 'bg-muted'}`}
+          >
+            <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform shadow-sm ${showLiveCount ? 'translate-x-6' : 'translate-x-1'}`} />
+          </button>
+        </div>
+        <div className="flex items-center justify-between py-2">
+          <div>
+            <p className="text-sm font-medium text-foreground">Election Type</p>
+            <p className="text-xs text-muted-foreground capitalize">
+              {election.electionType === "referendum" ? "Referendum — Yes/No vote" : "Standard — Candidate-based election"}
+            </p>
+          </div>
+          <Badge variant="outline" className="text-xs capitalize">
+            {election.electionType || "standard"}
+          </Badge>
+        </div>
+        <div className="flex items-center justify-between py-2">
+          <div>
+            <p className="text-sm font-medium text-foreground">Voting Method</p>
+            <p className="text-xs text-muted-foreground">
+              {election.votingMethod === "ranked_choice" ? "Ranked Choice (IRV) — voters rank candidates" : "First-Past-The-Post — one vote per position"}
+            </p>
+          </div>
+          <Badge variant="outline" className="text-xs">
+            {election.votingMethod === "ranked_choice" ? "IRV" : "FPTP"}
+          </Badge>
+        </div>
+      </div>
+    </Card>
   );
 }
 

@@ -8,10 +8,11 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
+import { Textarea } from "@/components/ui/textarea";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
-import { Loader2, Plus, Calendar as CalIcon, Users, CreditCard, Vote, Clock, Filter } from "lucide-react";
+import { Loader2, Plus, Calendar as CalIcon, Users, CreditCard, Vote, Clock, Filter, Settings2 } from "lucide-react";
 import { useQueryClient, useQuery } from "@tanstack/react-query";
 import { getListElectionsQueryKey } from "@workspace/api-client-react";
 import { StatusBadge } from "@/components/status-badge";
@@ -28,6 +29,10 @@ const createElectionSchema = z.object({
   title: z.string().min(3),
   description: z.string().optional(),
   votingType: z.enum(["web", "ussd", "both"]),
+  electionType: z.enum(["standard", "referendum"]).default("standard"),
+  votingMethod: z.enum(["fptp", "ranked_choice"]).default("fptp"),
+  referendumQuestion: z.string().optional(),
+  showLiveCount: z.boolean().default(true),
   startDate: z.string(),
   endDate: z.string(),
   requiresPayment: z.boolean().default(false),
@@ -63,8 +68,11 @@ export default function ElectionsPage() {
 
   const form = useForm<z.infer<typeof createElectionSchema>>({
     resolver: zodResolver(createElectionSchema),
-    defaultValues: { title: "", votingType: "both", requiresPayment: false, currency: "GHS", votingFee: 0, registeredVoters: 0 }
+    defaultValues: { title: "", votingType: "both", electionType: "standard", votingMethod: "fptp", showLiveCount: true, requiresPayment: false, currency: "GHS", votingFee: 0, registeredVoters: 0 }
   });
+
+  const watchElectionType = form.watch("electionType");
+  const watchShowLiveCount = form.watch("showLiveCount");
 
   const toggleDept = useCallback((id: string) => {
     setSelectedDepts(prev => prev.includes(id) ? prev.filter(d => d !== id) : [...prev, id]);
@@ -161,6 +169,66 @@ export default function ElectionsPage() {
                   </Select>
                 </div>
               </div>
+
+              <div className="border border-dashed border-border rounded-xl p-4 space-y-4">
+                <div className="flex items-center gap-2 text-sm font-semibold text-foreground">
+                  <Settings2 className="w-4 h-4 text-primary" />
+                  Advanced Election Settings
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label>Election Type</Label>
+                    <Select onValueChange={(v) => form.setValue("electionType", v as any)} defaultValue="standard">
+                      <SelectTrigger className="rounded-xl">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="standard">Standard (Candidates)</SelectItem>
+                        <SelectItem value="referendum">Referendum (Yes/No)</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <p className="text-xs text-muted-foreground">Referendum elections auto-create Yes/No choices.</p>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Voting Method</Label>
+                    <Select onValueChange={(v) => form.setValue("votingMethod", v as any)} defaultValue="fptp" disabled={watchElectionType === "referendum"}>
+                      <SelectTrigger className="rounded-xl">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="fptp">First-Past-The-Post</SelectItem>
+                        <SelectItem value="ranked_choice">Ranked Choice (IRV)</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <p className="text-xs text-muted-foreground">IRV: voters rank candidates by preference.</p>
+                  </div>
+                </div>
+                {watchElectionType === "referendum" && (
+                  <div className="space-y-2">
+                    <Label>Referendum Question <span className="text-muted-foreground text-xs">(optional)</span></Label>
+                    <Textarea
+                      {...form.register("referendumQuestion")}
+                      className="rounded-xl resize-none"
+                      rows={2}
+                      placeholder="e.g. Should the school introduce a new dress code policy?"
+                    />
+                    <p className="text-xs text-muted-foreground">This question will be prominently displayed to voters.</p>
+                  </div>
+                )}
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-medium text-foreground">Hide Live Vote Counts</p>
+                    <p className="text-xs text-muted-foreground">When enabled, vote counts are hidden from voters until the election closes</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => form.setValue("showLiveCount", !watchShowLiveCount)}
+                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ${!watchShowLiveCount ? 'bg-primary' : 'bg-muted'}`}
+                  >
+                    <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform shadow-sm ${!watchShowLiveCount ? 'translate-x-6' : 'translate-x-1'}`} />
+                  </button>
+                </div>
+              </div>
               <div className="space-y-2">
                 <Label>Registered Voters</Label>
                 <Input type="number" {...form.register("registeredVoters")} className="rounded-xl" placeholder="e.g. 500" />
@@ -250,13 +318,21 @@ export default function ElectionsPage() {
           {elections?.map(election => (
             <Card key={election.id} className="p-6 rounded-2xl shadow-sm hover:shadow-lg transition-all border-border/50 flex flex-col group">
               <div className="flex justify-between items-start mb-4">
-                {isScheduled(election) ? (
-                  <Badge className="bg-amber-100 text-amber-800 hover:bg-amber-100 border-amber-200 dark:bg-amber-900/40 dark:text-amber-300">
-                    <Clock className="w-3 h-3 mr-1" /> Scheduled
-                  </Badge>
-                ) : (
-                  <StatusBadge status={election.status} />
-                )}
+                <div className="flex items-center gap-2 flex-wrap">
+                  {isScheduled(election) ? (
+                    <Badge className="bg-amber-100 text-amber-800 hover:bg-amber-100 border-amber-200 dark:bg-amber-900/40 dark:text-amber-300">
+                      <Clock className="w-3 h-3 mr-1" /> Scheduled
+                    </Badge>
+                  ) : (
+                    <StatusBadge status={election.status} />
+                  )}
+                  {(election as any).electionType === "referendum" && (
+                    <Badge variant="secondary" className="text-[10px] bg-violet-100 text-violet-700 dark:bg-violet-900/40 dark:text-violet-300">Referendum</Badge>
+                  )}
+                  {(election as any).votingMethod === "ranked_choice" && (
+                    <Badge variant="secondary" className="text-[10px] bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300">IRV</Badge>
+                  )}
+                </div>
                 <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wider bg-muted px-2 py-1 rounded-md">
                   {election.votingType}
                 </div>

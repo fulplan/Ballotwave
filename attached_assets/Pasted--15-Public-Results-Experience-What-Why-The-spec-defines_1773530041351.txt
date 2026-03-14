@@ -1,0 +1,33 @@
+#15 - Public Results Experience
+What & Why
+The spec defines a rich public results page at 
+ballotwave.com/{school-slug}/{election-slug}
+ with auto-refresh, animated charts, Open Graph social sharing, an HTML embed widget for school websites, a QR code for notice boards, and a confetti celebration on final results publication. The current public results page is a static display with no social features.
+
+Done looks like
+Public results page auto-refreshes every 5 seconds when the election is active; shows a "Live" pulsing badge and a live turnout counter that increments in real time
+Candidate cards show: photo (or initial), candidate name, vote count, and an animated horizontal progress bar showing vote percentage; winner has a gold trophy icon and is highlighted with a green glow
+On final results publication, a full-screen confetti burst plays for 3 seconds, then the page settles into the final results view
+Open Graph meta tags are server-rendered (or set in the HTML head dynamically): og:title, og:description, og:image (a generated banner with election name and school logo), twitter:card
+A "Share" section shows: copy-link button, tweet button (pre-filled), and a "Embed on your website" button that generates a one-line <iframe> snippet the school can paste
+A QR code is displayed at the bottom of the page (generated client-side using qrcode.react) linking to the public results URL; a "Download QR Code" button saves it as PNG for use on notice boards
+Anonymous vote verification box at the bottom: enter receipt code → system confirms vote was counted (no candidate revealed)
+The page is fully accessible (WCAG 2.1 AA contrast), mobile-responsive, and works without JavaScript (SSR or static fallback)
+Out of scope
+Real-time WebSocket updates (polling every 5s is sufficient)
+Branded PDF social cards (just Open Graph image)
+Multiple language versions of the public page
+Tasks
+Backend: Open Graph image endpoint — Add GET /api/elections/public/:slug/og-image that returns a dynamically generated PNG (using canvas or sharp) with the school name, election title, and current turnout. Used as the og:image URL.
+Backend: vote verification endpoint update — Ensure GET /api/elections/:id/verify/:receiptCode is publicly accessible (no auth) and returns { verified: true/false, electionTitle, timestamp } without revealing the candidate chosen.
+Frontend: auto-refresh polling — Add a 5-second polling interval to the public results page using setInterval + refetchInterval in React Query. Show a "Live" pulsing green dot badge when the election is active.
+Frontend: animated results charts — Replace the static list with animated horizontal bar charts per position. Use Framer Motion to smoothly grow the bars when data updates. Highlight the winner with a trophy icon and a golden border. Show all candidates ranked by votes.
+Frontend: confetti on publish — Detect when resultsPublished transitions from false to true (compare previous query data). On detect, fire a confetti animation using canvas-confetti for 3 seconds.
+Frontend: Open Graph meta tags — Dynamically set <meta> tags in the page <head> using react-helmet or document.head manipulation: title, description, og:image URL, twitter:card.
+Frontend: share section (link, tweet, embed) — Add a Share card below the results with: Copy Link button (already exists), a "Tweet Results" button (pre-fills tweet text), and an "Embed Widget" button that shows a modal with the <iframe> snippet and a copy button.
+Frontend: QR code — Add a QR code component using qrcode.react showing the results URL. Include a "Download QR Code as PNG" button that uses a canvas ref to save the QR image.
+Frontend: receipt verification box — Add an "Verify Your Vote" section at the bottom of the public results page: text input for receipt code, submit button, and result message ("Your vote was counted on [date]" or "Receipt not found").
+Relevant files
+artifacts/api-server/src/routes/elections.ts
+artifacts/ballotwave/src/pages/public/results.tsx
+artifacts/ballotwave/src/pages/shared/results.tsx

@@ -6,6 +6,8 @@ import { usersTable } from "./users";
 
 export const electionStatusEnum = pgEnum("election_status", ["draft", "active", "closed", "cancelled"]);
 export const votingTypeEnum = pgEnum("voting_type", ["web", "ussd", "both"]);
+export const electionTypeEnum = pgEnum("election_type", ["standard", "referendum"]);
+export const votingMethodEnum = pgEnum("voting_method_enum", ["fptp", "ranked_choice"]);
 
 export const electionsTable = pgTable("elections", {
   id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
@@ -16,6 +18,11 @@ export const electionsTable = pgTable("elections", {
   createdById: text("created_by_id").references(() => usersTable.id),
   status: electionStatusEnum("status").notNull().default("draft"),
   votingType: votingTypeEnum("voting_type").notNull().default("web"),
+  electionType: electionTypeEnum("election_type").notNull().default("standard"),
+  votingMethod: votingMethodEnum("voting_method_enum").notNull().default("fptp"),
+  referendumQuestion: text("referendum_question"),
+  showLiveCount: boolean("show_live_count").notNull().default(true),
+  pdfCertUrl: text("pdf_cert_url"),
   startDate: timestamp("start_date").notNull(),
   endDate: timestamp("end_date").notNull(),
   requiresPayment: boolean("requires_payment").notNull().default(false),
